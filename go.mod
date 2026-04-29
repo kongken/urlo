@@ -4,7 +4,10 @@ go 1.26.2
 
 require (
 	butterfly.orx.me/core v0.0.0-20260427155459-f3485be49e45
+	connectrpc.com/connect v1.19.2
 	github.com/gin-gonic/gin v1.12.0
+	google.golang.org/grpc v1.71.0
+	google.golang.org/protobuf v1.36.10
 )
 
 require (
@@ -105,7 +108,5 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
-	google.golang.org/grpc v1.71.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

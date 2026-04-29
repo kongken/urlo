@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package urlo.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/kongken/urlo/pkg/proto/urlo/v1;urlov1";
+
+message ShortLink {
+  // Short code, e.g. "abc123".
+  string code = 1;
+  // Original long URL.
+  string long_url = 2;
+  // Fully-qualified short URL, e.g. "https://urlo.example/abc123".
+  string short_url = 3;
+  google.protobuf.Timestamp created_at = 4;
+  // Optional expiration time. Zero means no expiration.
+  google.protobuf.Timestamp expires_at = 5;
+  int64 visit_count = 6;
+}
+
+message ShortenRequest {
+  // Long URL to shorten. Required.
+  string long_url = 1;
+  // Optional custom code. If empty, the server generates one.
+  string custom_code = 2;
+  // Optional TTL in seconds. 0 means no expiration.
+  int64 ttl_seconds = 3;
+}
+
+message ShortenResponse {
+  ShortLink link = 1;
+}
+
+message ResolveRequest {
+  string code = 1;
+}
+
+message ResolveResponse {
+  ShortLink link = 1;
+}
+
+message GetStatsRequest {
+  string code = 1;
+}
+
+message GetStatsResponse {
+  ShortLink link = 1;
+}
+
+message DeleteRequest {
+  string code = 1;
+}
+
+message DeleteResponse {}
