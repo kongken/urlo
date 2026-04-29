@@ -1,0 +1,27 @@
+environment: "local"
+base_url: "http://localhost:8080"
+
+storage:
+  driver: "memory" # memory | s3
+  s3:
+    config_name: "links"
+    prefix: "links"
+
+log:
+  level: "info"
+  format: "text"
+  add_source: false
+
+otel: {}
+
+# To use S3, set storage.driver to "s3" and configure the named client below:
+# store:
+#   s3:
+#     links:
+#       endpoint: "s3.amazonaws.com"
+#       access_key_id: ""
+#       secret_access_key: ""
+#       region: "us-east-1"
+#       bucket: "urlo-links"
+#       use_ssl: true
+#       use_path_style: false

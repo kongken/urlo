@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -22,34 +22,31 @@ const (
 	codeAlphabet   = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 )
 
-type entry struct {
-	longURL    string
-	createdAt  time.Time
-	expiresAt  time.Time
-	visitCount atomic.Int64
-}
-
-// Service implements urlov1.UrlServiceServer with in-memory storage.
-// Concurrency-safe; suitable for single-instance deployments and tests.
+// Service implements urlov1.UrlServiceServer on top of a Store.
 type Service struct {
 	urlov1.UnimplementedUrlServiceServer
 
-	baseURL string
+	store Store
 
-	mu    sync.RWMutex
-	links map[string]*entry
+	mu      sync.RWMutex
+	baseURL string
 }
 
 type Options struct {
+	Store Store
 	// BaseURL is prepended to codes when building ShortLink.short_url.
 	// e.g. "https://urlo.example".
 	BaseURL string
 }
 
 func NewService(opts Options) *Service {
+	store := opts.Store
+	if store == nil {
+		store = NewMemoryStore()
+	}
 	return &Service{
+		store:   store,
 		baseURL: opts.BaseURL,
-		links:   make(map[string]*entry),
 	}
 }
 
@@ -59,6 +56,14 @@ func (s *Service) SetBaseURL(baseURL string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.baseURL = baseURL
+}
+
+// SetStore swaps the underlying Store. Intended to be called once during
+// app init after config is loaded.
+func (s *Service) SetStore(store Store) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store = store
 }
 
 func (s *Service) Shorten(ctx context.Context, req *urlov1.ShortenRequest) (*urlov1.ShortenResponse, error) {
@@ -78,33 +83,32 @@ func (s *Service) Shorten(ctx context.Context, req *urlov1.ShortenRequest) (*url
 		expiresAt = now.Add(time.Duration(req.GetTtlSeconds()) * time.Second)
 	}
 
-	code := req.GetCustomCode()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if code != "" {
+	if code := req.GetCustomCode(); code != "" {
 		if !isValidCode(code) {
 			return nil, status.Error(codes.InvalidArgument, "custom_code must be 1-32 chars from [A-Za-z0-9]")
 		}
-		if _, exists := s.links[code]; exists {
-			return nil, status.Errorf(codes.AlreadyExists, "code %q already exists", code)
+		r := &Record{Code: code, LongURL: req.GetLongUrl(), CreatedAt: now, ExpiresAt: expiresAt}
+		if err := s.store.Create(ctx, r); err != nil {
+			return nil, mapStoreErr(err, code)
 		}
-	} else {
-		generated, err := s.generateUniqueCodeLocked(defaultCodeLen)
+		return &urlov1.ShortenResponse{Link: s.toProto(r)}, nil
+	}
+
+	for range 8 {
+		code, err := randomCode(defaultCodeLen)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "generate code: %v", err)
 		}
-		code = generated
+		r := &Record{Code: code, LongURL: req.GetLongUrl(), CreatedAt: now, ExpiresAt: expiresAt}
+		err = s.store.Create(ctx, r)
+		if err == nil {
+			return &urlov1.ShortenResponse{Link: s.toProto(r)}, nil
+		}
+		if !errors.Is(err, ErrAlreadyExists) {
+			return nil, status.Errorf(codes.Internal, "create: %v", err)
+		}
 	}
-
-	e := &entry{
-		longURL:   req.GetLongUrl(),
-		createdAt: now,
-		expiresAt: expiresAt,
-	}
-	s.links[code] = e
-
-	return &urlov1.ShortenResponse{Link: s.toProto(code, e)}, nil
+	return nil, status.Error(codes.Internal, "failed to generate unique code after 8 attempts")
 }
 
 func (s *Service) Resolve(ctx context.Context, req *urlov1.ResolveRequest) (*urlov1.ResolveResponse, error) {
@@ -113,21 +117,21 @@ func (s *Service) Resolve(ctx context.Context, req *urlov1.ResolveRequest) (*url
 		return nil, status.Error(codes.InvalidArgument, "code is required")
 	}
 
-	s.mu.RLock()
-	e, ok := s.links[code]
-	s.mu.RUnlock()
-	if !ok {
-		return nil, status.Errorf(codes.NotFound, "code %q not found", code)
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return nil, mapStoreErr(err, code)
 	}
-	if expired(e) {
-		s.mu.Lock()
-		delete(s.links, code)
-		s.mu.Unlock()
+	if r.Expired() {
+		_ = s.store.Delete(ctx, code)
 		return nil, status.Errorf(codes.NotFound, "code %q expired", code)
 	}
 
-	e.visitCount.Add(1)
-	return &urlov1.ResolveResponse{Link: s.toProto(code, e)}, nil
+	updated, err := s.store.IncrVisit(ctx, code)
+	if err != nil {
+		// Visit-count failures shouldn't break resolution; log via gRPC trace.
+		return &urlov1.ResolveResponse{Link: s.toProto(r)}, nil
+	}
+	return &urlov1.ResolveResponse{Link: s.toProto(updated)}, nil
 }
 
 func (s *Service) GetStats(ctx context.Context, req *urlov1.GetStatsRequest) (*urlov1.GetStatsResponse, error) {
@@ -135,14 +139,11 @@ func (s *Service) GetStats(ctx context.Context, req *urlov1.GetStatsRequest) (*u
 	if code == "" {
 		return nil, status.Error(codes.InvalidArgument, "code is required")
 	}
-
-	s.mu.RLock()
-	e, ok := s.links[code]
-	s.mu.RUnlock()
-	if !ok {
-		return nil, status.Errorf(codes.NotFound, "code %q not found", code)
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return nil, mapStoreErr(err, code)
 	}
-	return &urlov1.GetStatsResponse{Link: s.toProto(code, e)}, nil
+	return &urlov1.GetStatsResponse{Link: s.toProto(r)}, nil
 }
 
 func (s *Service) Delete(ctx context.Context, req *urlov1.DeleteRequest) (*urlov1.DeleteResponse, error) {
@@ -150,48 +151,45 @@ func (s *Service) Delete(ctx context.Context, req *urlov1.DeleteRequest) (*urlov
 	if code == "" {
 		return nil, status.Error(codes.InvalidArgument, "code is required")
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.links[code]; !ok {
-		return nil, status.Errorf(codes.NotFound, "code %q not found", code)
+	if err := s.store.Delete(ctx, code); err != nil {
+		return nil, mapStoreErr(err, code)
 	}
-	delete(s.links, code)
 	return &urlov1.DeleteResponse{}, nil
 }
 
-func (s *Service) toProto(code string, e *entry) *urlov1.ShortLink {
+func (s *Service) toProto(r *Record) *urlov1.ShortLink {
 	link := &urlov1.ShortLink{
-		Code:       code,
-		LongUrl:    e.longURL,
-		ShortUrl:   s.buildShortURL(code),
-		CreatedAt:  timestamppb.New(e.createdAt),
-		VisitCount: e.visitCount.Load(),
+		Code:       r.Code,
+		LongUrl:    r.LongURL,
+		ShortUrl:   s.buildShortURL(r.Code),
+		CreatedAt:  timestamppb.New(r.CreatedAt),
+		VisitCount: r.VisitCount,
 	}
-	if !e.expiresAt.IsZero() {
-		link.ExpiresAt = timestamppb.New(e.expiresAt)
+	if !r.ExpiresAt.IsZero() {
+		link.ExpiresAt = timestamppb.New(r.ExpiresAt)
 	}
 	return link
 }
 
 func (s *Service) buildShortURL(code string) string {
-	if s.baseURL == "" {
+	s.mu.RLock()
+	base := s.baseURL
+	s.mu.RUnlock()
+	if base == "" {
 		return "/" + code
 	}
-	return trimRightSlash(s.baseURL) + "/" + code
+	return trimRightSlash(base) + "/" + code
 }
 
-func (s *Service) generateUniqueCodeLocked(length int) (string, error) {
-	for range 8 {
-		code, err := randomCode(length)
-		if err != nil {
-			return "", err
-		}
-		if _, exists := s.links[code]; !exists {
-			return code, nil
-		}
+func mapStoreErr(err error, code string) error {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return status.Errorf(codes.NotFound, "code %q not found", code)
+	case errors.Is(err, ErrAlreadyExists):
+		return status.Errorf(codes.AlreadyExists, "code %q already exists", code)
+	default:
+		return status.Error(codes.Internal, fmt.Sprintf("store: %v", err))
 	}
-	return "", errors.New("failed to generate unique code after 8 attempts")
 }
 
 func randomCode(length int) (string, error) {
@@ -220,10 +218,6 @@ func isValidCode(s string) bool {
 		}
 	}
 	return true
-}
-
-func expired(e *entry) bool {
-	return !e.expiresAt.IsZero() && time.Now().UTC().After(e.expiresAt)
 }
 
 func trimRightSlash(s string) string {

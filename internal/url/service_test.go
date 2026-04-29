@@ -86,9 +86,12 @@ func TestResolveExpired(t *testing.T) {
 	}
 	code := resp.GetLink().GetCode()
 
-	s.mu.Lock()
-	s.links[code].expiresAt = time.Now().Add(-time.Second)
-	s.mu.Unlock()
+	mem := s.store.(*MemoryStore)
+	mem.mu.Lock()
+	r := mem.records[code]
+	r.ExpiresAt = time.Now().Add(-time.Second)
+	mem.records[code] = r
+	mem.mu.Unlock()
 
 	_, err = s.Resolve(ctx, &urlov1.ResolveRequest{Code: code})
 	if status.Code(err) != codes.NotFound {
