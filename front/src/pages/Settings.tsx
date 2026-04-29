@@ -49,7 +49,7 @@ export default function Settings() {
           <Input
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="http://localhost:8080"
+            placeholder="/ (same origin)"
           />
           <Button onClick={save}>Save</Button>
         </CardContent>
