@@ -9,6 +9,7 @@ import (
 	butterflys3 "butterfly.orx.me/core/store/s3"
 	"github.com/gin-gonic/gin"
 	"github.com/kongken/urlo/internal/config"
+	apihttp "github.com/kongken/urlo/internal/http"
 	"github.com/kongken/urlo/internal/url"
 	"github.com/kongken/urlo/internal/url/s3store"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
@@ -27,6 +28,7 @@ func main() {
 			r.GET("/ping", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "pong"})
 			})
+			apihttp.RegisterRoutes(r, urlSvc)
 		},
 		GRPCRegister: func(s *grpc.Server) {
 			urlov1.RegisterUrlServiceServer(s, urlSvc)
