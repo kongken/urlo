@@ -1,11 +1,39 @@
 environment: "local"
 base_url: "http://localhost:8080"
 
+# ----------------------------------------------------------------------
+# Storage backend for short links.
+#   driver: "memory" — in-process map; resets on restart (dev/test default)
+#   driver: "s3"     — store each link as JSON at {bucket}/{prefix}/{code}.json
+# ----------------------------------------------------------------------
 storage:
-  driver: "memory" # memory | s3
+  driver: "memory"
   s3:
+    # Must match a key under `store.s3.<name>` below.
     config_name: "links"
-    prefix: "links"
+    # Object-key prefix inside the bucket. Lets one bucket host multiple
+    # apps / environments / tenants. Leading & trailing "/" are trimmed.
+    # Examples:
+    #   "links"              -> bucket/links/{code}.json   (default if empty)
+    #   "urlo/links"         -> bucket/urlo/links/{code}.json
+    #   "envs/prod/urlo"     -> bucket/envs/prod/urlo/{code}.json
+    prefix: "urlo/links"
+
+# ----------------------------------------------------------------------
+# Butterfly store configuration (referenced by storage.s3.config_name).
+# Only required when storage.driver = "s3".
+# ----------------------------------------------------------------------
+store:
+  s3:
+    links:
+      endpoint: "s3.amazonaws.com"
+      region: "us-east-1"
+      bucket: "urlo-links"
+      access_key_id: ""
+      secret_access_key: ""
+      use_ssl: true
+      # Set to true for MinIO / path-style endpoints.
+      use_path_style: false
 
 log:
   level: "info"
@@ -13,15 +41,3 @@ log:
   add_source: false
 
 otel: {}
-
-# To use S3, set storage.driver to "s3" and configure the named client below:
-# store:
-#   s3:
-#     links:
-#       endpoint: "s3.amazonaws.com"
-#       access_key_id: ""
-#       secret_access_key: ""
-#       region: "us-east-1"
-#       bucket: "urlo-links"
-#       use_ssl: true
-#       use_path_style: false

@@ -26,18 +26,28 @@ import (
 	"github.com/kongken/urlo/internal/url"
 )
 
+// API is the subset of *s3.Client used by Store. *awss3.Client satisfies
+// it; tests can pass a fake.
+type API interface {
+	PutObject(ctx context.Context, in *awss3.PutObjectInput, opts ...func(*awss3.Options)) (*awss3.PutObjectOutput, error)
+	GetObject(ctx context.Context, in *awss3.GetObjectInput, opts ...func(*awss3.Options)) (*awss3.GetObjectOutput, error)
+	HeadObject(ctx context.Context, in *awss3.HeadObjectInput, opts ...func(*awss3.Options)) (*awss3.HeadObjectOutput, error)
+	DeleteObject(ctx context.Context, in *awss3.DeleteObjectInput, opts ...func(*awss3.Options)) (*awss3.DeleteObjectOutput, error)
+}
+
 // Store implements url.Store on top of an S3 bucket.
 type Store struct {
-	client *awss3.Client
+	client API
 	bucket string
 	prefix string
 }
 
 type Options struct {
-	Client *awss3.Client
+	Client API
 	Bucket string
-	// Prefix is prepended to all object keys (without trailing slash).
-	// Default: "links".
+	// Prefix is prepended to all object keys. Leading/trailing slashes are
+	// trimmed. Use it to share a bucket with other data, e.g. "urlo/links"
+	// or "envs/prod/urlo". Default: "links".
 	Prefix string
 }
 
@@ -48,14 +58,14 @@ func New(opts Options) (*Store, error) {
 	if opts.Bucket == "" {
 		return nil, errors.New("s3store: Bucket is required")
 	}
-	prefix := opts.Prefix
+	prefix := strings.Trim(opts.Prefix, "/")
 	if prefix == "" {
 		prefix = "links"
 	}
 	return &Store{
 		client: opts.Client,
 		bucket: opts.Bucket,
-		prefix: strings.Trim(prefix, "/"),
+		prefix: prefix,
 	}, nil
 }
 
