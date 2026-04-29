@@ -35,6 +35,23 @@ store:
       # Set to true for MinIO / path-style endpoints.
       use_path_style: false
 
+# ----------------------------------------------------------------------
+# Per-IP rate limiting on URL creation (POST /api/v1/urls).
+# Requires a redis client configured under `store.redis.<name>`.
+# ----------------------------------------------------------------------
+rate_limit:
+  enabled: false
+  redis_config_name: "cache"
+  per_hour: 60
+
+# Example redis config (uncomment when rate_limit.enabled = true):
+# store:
+#   redis:
+#     cache:
+#       addr: "localhost:6379"
+#       password: ""
+#       db: 0
+
 log:
   level: "info"
   format: "text"

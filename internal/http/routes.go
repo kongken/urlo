@@ -1,12 +1,15 @@
 package http
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/kongken/urlo/internal/ratelimit"
 	"github.com/kongken/urlo/internal/url"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
 )
@@ -20,18 +23,64 @@ import (
 //	GET    /api/v1/urls/:code/stats  -> GetStats
 //	DELETE /api/v1/urls/:code        -> Delete
 //	GET    /:code                    -> 302 to the long URL
-func RegisterRoutes(r *gin.Engine, svc *url.Service) {
+func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
+	o := options{}
+	for _, fn := range opts {
+		fn(&o)
+	}
+
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
 
 	api := r.Group("/api/v1")
-	api.POST("/urls", handleShorten(svc))
+	shorten := []gin.HandlerFunc{}
+	if o.shortenLimiter != nil {
+		shorten = append(shorten, rateLimitMiddleware(o.shortenLimiter, "shorten"))
+	}
+	shorten = append(shorten, handleShorten(svc))
+	api.POST("/urls", shorten...)
 	api.GET("/urls/:code", handleResolve(svc))
 	api.GET("/urls/:code/stats", handleGetStats(svc))
 	api.DELETE("/urls/:code", handleDelete(svc))
 
 	r.GET("/:code", handleRedirect(svc))
+}
+
+// Option customises route registration.
+type Option func(*options)
+
+type options struct {
+	shortenLimiter *ratelimit.Limiter
+}
+
+// WithShortenLimiter applies a per-IP rate limiter to POST /api/v1/urls.
+// If the limiter is nil, no limiting is performed.
+func WithShortenLimiter(l *ratelimit.Limiter) Option {
+	return func(o *options) { o.shortenLimiter = l }
+}
+
+func rateLimitMiddleware(l *ratelimit.Limiter, scope string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		if ip == "" {
+			ip = "unknown"
+		}
+		retryAfter, err := l.Allow(c.Request.Context(), scope+":"+ip)
+		if err != nil {
+			if errors.Is(err, ratelimit.ErrLimitExceeded) {
+				secs := max(int(retryAfter.Seconds()), 1)
+				c.Header("Retry-After", strconv.Itoa(secs))
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+					"error":   "rate_limited",
+					"message": "too many requests from this IP, try again later",
+				})
+				return
+			}
+			// Fail-open on backend errors; do not block legitimate traffic.
+		}
+		c.Next()
+	}
 }
 
 type shortenRequest struct {

@@ -6,10 +6,12 @@ import (
 	"log/slog"
 
 	"butterfly.orx.me/core/app"
+	butterflyredis "butterfly.orx.me/core/store/redis"
 	butterflys3 "butterfly.orx.me/core/store/s3"
 	"github.com/gin-gonic/gin"
 	"github.com/kongken/urlo/internal/config"
 	apihttp "github.com/kongken/urlo/internal/http"
+	"github.com/kongken/urlo/internal/ratelimit"
 	"github.com/kongken/urlo/internal/url"
 	"github.com/kongken/urlo/internal/url/s3store"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
@@ -19,6 +21,7 @@ import (
 func main() {
 	svcConfig := &config.ServiceConfig{}
 	urlSvc := url.NewService(url.Options{})
+	var shortenLimiter *ratelimit.Limiter
 
 	appConfig := &app.Config{
 		Service:   "urlo",
@@ -28,7 +31,7 @@ func main() {
 			r.GET("/ping", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "pong"})
 			})
-			apihttp.RegisterRoutes(r, urlSvc)
+			apihttp.RegisterRoutes(r, urlSvc, apihttp.WithShortenLimiter(shortenLimiter))
 		},
 		GRPCRegister: func(s *grpc.Server) {
 			urlov1.RegisterUrlServiceServer(s, urlSvc)
@@ -42,12 +45,40 @@ func main() {
 				}
 				urlSvc.SetStore(store)
 				slog.Info("url service ready", "store", svcConfig.Storage.Driver)
+
+				l, err := buildShortenLimiter(svcConfig.RateLimit)
+				if err != nil {
+					return fmt.Errorf("build rate limiter: %w", err)
+				}
+				if l != nil {
+					shortenLimiter = l
+					slog.Info("shorten rate limit enabled",
+						"per_hour", svcConfig.RateLimit.PerHour,
+						"redis", svcConfig.RateLimit.RedisConfigName)
+				}
 				return nil
 			},
 		},
 	}
 
 	app.New(appConfig).Run()
+}
+
+func buildShortenLimiter(c config.RateLimitConfig) (*ratelimit.Limiter, error) {
+	if !c.Enabled {
+		return nil, nil
+	}
+	if c.PerHour <= 0 {
+		return nil, errors.New("rate_limit.per_hour must be > 0 when enabled")
+	}
+	if c.RedisConfigName == "" {
+		return nil, errors.New("rate_limit.redis_config_name is required when enabled")
+	}
+	client := butterflyredis.GetClient(c.RedisConfigName)
+	if client == nil {
+		return nil, fmt.Errorf("redis client %q not found in butterfly store config", c.RedisConfigName)
+	}
+	return ratelimit.New(client, "urlo:ratelimit:shorten", c.PerHour), nil
 }
 
 func buildStore(c config.StorageConfig) (url.Store, error) {

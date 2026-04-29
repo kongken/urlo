@@ -3,9 +3,21 @@ package config
 import "log/slog"
 
 type ServiceConfig struct {
-	Environment string        `yaml:"environment"`
-	BaseURL     string        `yaml:"base_url"`
-	Storage     StorageConfig `yaml:"storage"`
+	Environment string          `yaml:"environment"`
+	BaseURL     string          `yaml:"base_url"`
+	Storage     StorageConfig   `yaml:"storage"`
+	RateLimit   RateLimitConfig `yaml:"rate_limit"`
+}
+
+// RateLimitConfig configures per-IP rate limiting on URL creation.
+//
+// When Enabled is true, the service enforces at most PerHour shorten
+// requests per client IP per hour using the butterfly redis client
+// identified by RedisConfigName.
+type RateLimitConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	RedisConfigName string `yaml:"redis_config_name"`
+	PerHour         int    `yaml:"per_hour"`
 }
 
 // StorageConfig selects the backing store for short links.
