@@ -16,6 +16,7 @@ export interface ShortenRequest {
   long_url: string
   custom_code?: string
   ttl_seconds?: number
+  code_length?: number
 }
 
 function getBaseUrl(): string {

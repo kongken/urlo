@@ -26,6 +26,10 @@ message ShortenRequest {
   string custom_code = 2;
   // Optional TTL in seconds. 0 means no expiration.
   int64 ttl_seconds = 3;
+  // Optional length for the auto-generated code. 0 falls back to the
+  // server's configured default. Must be within the server-supported
+  // range (currently [6, 32]); ignored when custom_code is provided.
+  int32 code_length = 4;
 }
 
 message ShortenResponse {

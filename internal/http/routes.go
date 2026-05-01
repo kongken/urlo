@@ -214,6 +214,7 @@ type shortenRequest struct {
 	LongURL    string `json:"long_url"`
 	CustomCode string `json:"custom_code,omitempty"`
 	TTLSeconds int64  `json:"ttl_seconds,omitempty"`
+	CodeLength int32  `json:"code_length,omitempty"`
 }
 
 func handleShorten(svc *url.Service) gin.HandlerFunc {
@@ -234,6 +235,7 @@ func handleShorten(svc *url.Service) gin.HandlerFunc {
 			LongUrl:    body.LongURL,
 			CustomCode: body.CustomCode,
 			TtlSeconds: body.TTLSeconds,
+			CodeLength: body.CodeLength,
 		}, ownerID)
 		if err != nil {
 			writeStatusError(c, err)

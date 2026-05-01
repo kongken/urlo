@@ -18,7 +18,12 @@ import (
 )
 
 const (
-	defaultCodeLen = 6
+	// MinCodeLen is the floor for both the default and configured code
+	// length. Below 6 chars the keyspace is too small to avoid frequent
+	// collisions and trivially enumerable.
+	MinCodeLen = 6
+	// DefaultCodeLen is used when no code length is configured.
+	DefaultCodeLen = 6
 	maxCodeLen     = 32
 	codeAlphabet   = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 )
@@ -30,8 +35,9 @@ type Service struct {
 	store    Store
 	recorder clicks.Recorder
 
-	mu      sync.RWMutex
-	baseURL string
+	mu       sync.RWMutex
+	baseURL  string
+	codeLen  int
 }
 
 type Options struct {
@@ -39,6 +45,10 @@ type Options struct {
 	// BaseURL is prepended to codes when building ShortLink.short_url.
 	// e.g. "https://urlo.example".
 	BaseURL string
+	// CodeLen is the length of randomly generated codes. Values < MinCodeLen
+	// are silently raised to MinCodeLen; values > maxCodeLen are clamped.
+	// Zero means DefaultCodeLen.
+	CodeLen int
 }
 
 func NewService(opts Options) *Service {
@@ -50,7 +60,37 @@ func NewService(opts Options) *Service {
 		store:    store,
 		recorder: clicks.Nop{},
 		baseURL:  opts.BaseURL,
+		codeLen:  clampCodeLen(opts.CodeLen),
 	}
+}
+
+// SetCodeLength configures the length of newly generated random codes.
+// Out-of-range values are clamped to [MinCodeLen, maxCodeLen]. Existing
+// custom codes are unaffected. Intended to be called once during init.
+func (s *Service) SetCodeLength(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.codeLen = clampCodeLen(n)
+}
+
+// CodeLength reports the active random-code length.
+func (s *Service) CodeLength() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.codeLen
+}
+
+func clampCodeLen(n int) int {
+	if n <= 0 {
+		return DefaultCodeLen
+	}
+	if n < MinCodeLen {
+		return MinCodeLen
+	}
+	if n > maxCodeLen {
+		return maxCodeLen
+	}
+	return n
 }
 
 // SetRecorder swaps the click recorder. Pass nil to disable recording.
@@ -103,6 +143,12 @@ func (s *Service) ShortenWithOwner(ctx context.Context, req *urlov1.ShortenReque
 	if req.GetTtlSeconds() < 0 {
 		return nil, status.Error(codes.InvalidArgument, "ttl_seconds must be >= 0")
 	}
+	if reqLen := req.GetCodeLength(); reqLen != 0 {
+		if reqLen < int32(MinCodeLen) || reqLen > int32(maxCodeLen) {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"code_length must be 0 or within [%d, %d]", MinCodeLen, maxCodeLen)
+		}
+	}
 
 	now := time.Now().UTC()
 	var expiresAt time.Time
@@ -121,8 +167,12 @@ func (s *Service) ShortenWithOwner(ctx context.Context, req *urlov1.ShortenReque
 		return &urlov1.ShortenResponse{Link: s.toProto(r)}, nil
 	}
 
+	codeLen := s.CodeLength()
+	if reqLen := int(req.GetCodeLength()); reqLen > 0 {
+		codeLen = reqLen
+	}
 	for range 8 {
-		code, err := randomCode(defaultCodeLen)
+		code, err := randomCode(codeLen)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "generate code: %v", err)
 		}

@@ -117,7 +117,11 @@ type ShortenRequest struct {
 	// Optional custom code. If empty, the server generates one.
 	CustomCode string `protobuf:"bytes,2,opt,name=custom_code,json=customCode,proto3" json:"custom_code,omitempty"`
 	// Optional TTL in seconds. 0 means no expiration.
-	TtlSeconds    int64 `protobuf:"varint,3,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	TtlSeconds int64 `protobuf:"varint,3,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	// Optional length for the auto-generated code. 0 falls back to the
+	// server's configured default. Must be within the server-supported
+	// range (currently [6, 32]); ignored when custom_code is provided.
+	CodeLength    int32 `protobuf:"varint,4,opt,name=code_length,json=codeLength,proto3" json:"code_length,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -169,6 +173,13 @@ func (x *ShortenRequest) GetCustomCode() string {
 func (x *ShortenRequest) GetTtlSeconds() int64 {
 	if x != nil {
 		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *ShortenRequest) GetCodeLength() int32 {
+	if x != nil {
+		return x.CodeLength
 	}
 	return 0
 }
@@ -757,13 +768,15 @@ const file_urlo_v1_url_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1f\n" +
 	"\vvisit_count\x18\x06 \x01(\x03R\n" +
-	"visitCount\"m\n" +
+	"visitCount\"\x8e\x01\n" +
 	"\x0eShortenRequest\x12\x19\n" +
 	"\blong_url\x18\x01 \x01(\tR\alongUrl\x12\x1f\n" +
 	"\vcustom_code\x18\x02 \x01(\tR\n" +
 	"customCode\x12\x1f\n" +
 	"\vttl_seconds\x18\x03 \x01(\x03R\n" +
-	"ttlSeconds\"9\n" +
+	"ttlSeconds\x12\x1f\n" +
+	"\vcode_length\x18\x04 \x01(\x05R\n" +
+	"codeLength\"9\n" +
 	"\x0fShortenResponse\x12&\n" +
 	"\x04link\x18\x01 \x01(\v2\x12.urlo.v1.ShortLinkR\x04link\"$\n" +
 	"\x0eResolveRequest\x12\x12\n" +

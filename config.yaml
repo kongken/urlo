@@ -1,6 +1,10 @@
 environment: "local"
 base_url: "http://localhost:8080"
 
+# Length of randomly-generated short codes.
+# Minimum (and default) is 6; clamped to 32 maximum.
+code_length: 6
+
 # ----------------------------------------------------------------------
 # Storage backend for short links.
 #   driver: "memory" — in-process map; resets on restart (dev/test default)

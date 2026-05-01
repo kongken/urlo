@@ -55,6 +55,8 @@ func main() {
 		InitFunc: []func() error{
 			func() error {
 				urlSvc.SetBaseURL(svcConfig.BaseURL)
+				urlSvc.SetCodeLength(svcConfig.CodeLength)
+				slog.Info("code length configured", "length", urlSvc.CodeLength())
 				store, err := buildStore(svcConfig.Storage)
 				if err != nil {
 					return fmt.Errorf("build store: %w", err)

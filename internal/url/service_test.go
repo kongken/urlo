@@ -116,3 +116,81 @@ func TestDelete(t *testing.T) {
 		t.Errorf("expected NotFound on second delete, got %v", err)
 	}
 }
+
+func TestShortenCodeLengthRequest(t *testing.T) {
+	s := NewService(Options{})
+	ctx := context.Background()
+
+	resp, err := s.Shorten(ctx, &urlov1.ShortenRequest{
+		LongUrl:    "https://example.com",
+		CodeLength: 10,
+	})
+	if err != nil {
+		t.Fatalf("Shorten: %v", err)
+	}
+	if got := len(resp.GetLink().GetCode()); got != 10 {
+		t.Fatalf("code length = %d, want 10", got)
+	}
+
+	// Below minimum: rejected.
+	if _, err := s.Shorten(ctx, &urlov1.ShortenRequest{
+		LongUrl:    "https://example.com",
+		CodeLength: 3,
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument for code_length=3, got %v", err)
+	}
+
+	// Above maximum: rejected.
+	if _, err := s.Shorten(ctx, &urlov1.ShortenRequest{
+		LongUrl:    "https://example.com",
+		CodeLength: 99,
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument for code_length=99, got %v", err)
+	}
+
+	// Custom code wins; code_length is ignored when custom_code is set.
+	resp, err = s.Shorten(ctx, &urlov1.ShortenRequest{
+		LongUrl:    "https://example.com/two",
+		CustomCode: "myCustom",
+		CodeLength: 12,
+	})
+	if err != nil {
+		t.Fatalf("Shorten with custom_code: %v", err)
+	}
+	if resp.GetLink().GetCode() != "myCustom" {
+		t.Errorf("custom_code ignored: got %q", resp.GetLink().GetCode())
+	}
+}
+
+func TestCodeLengthConfigurable(t *testing.T) {
+	cases := []struct {
+		name     string
+		opt      int
+		setLen   int
+		wantLen  int
+	}{
+		{"default zero", 0, 0, DefaultCodeLen},
+		{"below min raised", 3, 0, MinCodeLen},
+		{"explicit 10", 10, 0, 10},
+		{"set after init clamped", 0, 1, MinCodeLen},
+		{"above max clamped", 99, 0, 32},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewService(Options{CodeLen: tc.opt})
+			if tc.setLen != 0 {
+				s.SetCodeLength(tc.setLen)
+			}
+			if got := s.CodeLength(); got != tc.wantLen {
+				t.Fatalf("CodeLength() = %d, want %d", got, tc.wantLen)
+			}
+			resp, err := s.Shorten(context.Background(), &urlov1.ShortenRequest{LongUrl: "https://example.com"})
+			if err != nil {
+				t.Fatalf("Shorten: %v", err)
+			}
+			if got := len(resp.GetLink().GetCode()); got != tc.wantLen {
+				t.Fatalf("generated code length = %d, want %d", got, tc.wantLen)
+			}
+		})
+	}
+}

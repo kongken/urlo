@@ -25,10 +25,18 @@ const features = [
   },
 ]
 
+type CodeStyle = "short" | "long"
+
+const CODE_LENGTHS: Record<CodeStyle, number> = {
+  short: 6,
+  long: 12,
+}
+
 export default function Landing() {
   const { user } = useAuth()
   const [longUrl, setLongUrl] = useState("")
   const [customCode, setCustomCode] = useState("")
+  const [codeStyle, setCodeStyle] = useState<CodeStyle>("short")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ShortLink | null>(null)
   const [copied, setCopied] = useState(false)
@@ -38,9 +46,13 @@ export default function Landing() {
     if (!longUrl.trim()) return
     setLoading(true)
     try {
+      const trimmedCustom = customCode.trim()
       const link = await api.shorten({
         long_url: longUrl.trim(),
-        custom_code: customCode.trim() || undefined,
+        custom_code: trimmedCustom || undefined,
+        // code_length is ignored server-side when custom_code is set,
+        // so only include it for auto-generated codes.
+        code_length: trimmedCustom ? undefined : CODE_LENGTHS[codeStyle],
       })
       if (!user) upsertLocalLink(link)
       setResult(link)
@@ -82,13 +94,42 @@ export default function Landing() {
               {loading ? "Shortening…" : "Shorten URL"}
             </Button>
           </div>
-          <div className="flex justify-center">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <Input
               value={customCode}
               onChange={(e) => setCustomCode(e.target.value)}
               placeholder="Optional custom code (e.g. launch)"
               className="max-w-xs text-sm"
             />
+            <div
+              role="radiogroup"
+              aria-label="Code length"
+              className="inline-flex items-center rounded-full border bg-card p-0.5 text-sm"
+            >
+              {(["short", "long"] as CodeStyle[]).map((opt) => {
+                const active = codeStyle === opt
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setCodeStyle(opt)}
+                    disabled={!!customCode.trim()}
+                    className={
+                      "rounded-full px-3 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed " +
+                      (active
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {opt === "short"
+                      ? `Short (${CODE_LENGTHS.short})`
+                      : `Long (${CODE_LENGTHS.long})`}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </form>
 

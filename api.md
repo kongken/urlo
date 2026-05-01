@@ -195,6 +195,7 @@ Limited callers receive **429** with `Retry-After`.
 | `long_url`    | string  | yes      | Must parse as a valid URL                            |
 | `custom_code` | string  | no       | `[A-Za-z0-9]{1,32}`; `409` if it already exists      |
 | `ttl_seconds` | integer | no       | `>= 0`. `0` (default) means no expiration            |
+| `code_length` | integer | no       | Length of auto-generated code; must be in `[6, 32]`. `0` (default) uses the server-configured length. Ignored when `custom_code` is set. |
 
 **Example**
 ```bash
@@ -215,8 +216,8 @@ curl -X POST http://localhost:8080/api/v1/urls \
 }
 ```
 
-**Errors**: `400` (invalid body / `long_url` / `custom_code` / `ttl_seconds`),
-`409` (`custom_code` already used), `429` (rate-limited).
+**Errors**: `400` (invalid body / `long_url` / `custom_code` / `ttl_seconds` /
+`code_length`), `409` (`custom_code` already used), `429` (rate-limited).
 
 ---
 

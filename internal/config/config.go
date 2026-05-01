@@ -5,6 +5,10 @@ import "log/slog"
 type ServiceConfig struct {
 	Environment string          `yaml:"environment"`
 	BaseURL     string          `yaml:"base_url"`
+	// CodeLength sets the length of randomly generated short codes.
+	// Values below the built-in minimum (6) are raised to 6; values
+	// above 32 are clamped to 32. 0 (default) keeps the built-in default.
+	CodeLength  int             `yaml:"code_length"`
 	Storage     StorageConfig   `yaml:"storage"`
 	RateLimit   RateLimitConfig `yaml:"rate_limit"`
 	Auth        AuthConfig      `yaml:"auth"`
@@ -83,6 +87,7 @@ func (c *ServiceConfig) Print() {
 	slog.Info("service config loaded",
 		"environment", c.Environment,
 		"base_url", c.BaseURL,
+		"code_length", c.CodeLength,
 		"storage_driver", c.Storage.Driver,
 	)
 }
