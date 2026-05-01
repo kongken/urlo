@@ -54,6 +54,28 @@ export interface AuthUser {
   name?: string
 }
 
+export interface ClickEvent {
+  id: string
+  code: string
+  ts: string
+  ip_hash: string
+  country: string
+  city: string
+  referrer: string
+  referrer_host: string
+  user_agent: string
+  browser: string
+  os: string
+  device: string
+  lang: string
+  is_bot: boolean
+}
+
+export interface ListClicksResponse {
+  events: ClickEvent[]
+  next_page_token: string
+}
+
 export const api = {
   shorten(body: ShortenRequest) {
     return request<ShortLink>("/api/v1/urls", {
@@ -74,6 +96,18 @@ export const api = {
   },
   listMine() {
     return request<{ links: ShortLink[] }>("/api/v1/urls").then((r) => r.links ?? [])
+  },
+  listClicks(code: string, opts?: { pageSize?: number; pageToken?: string }) {
+    const params = new URLSearchParams()
+    if (opts?.pageSize) params.set("page_size", String(opts.pageSize))
+    if (opts?.pageToken) params.set("page_token", opts.pageToken)
+    const qs = params.toString() ? `?${params.toString()}` : ""
+    return request<ListClicksResponse>(
+      `/api/v1/urls/${encodeURIComponent(code)}/clicks${qs}`,
+    ).then((r) => ({
+      events: r.events ?? [],
+      next_page_token: r.next_page_token ?? "",
+    }))
   },
   // Auth
   loginWithGoogle(idToken: string) {
