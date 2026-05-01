@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, upsertLocalLink, type ShortLink } from "@/lib/api"
 import { useAuth } from "@/contexts/AuthContext"
+import { QrCard } from "@/components/QrCard"
 import { toast } from "sonner"
 
 const features = [
@@ -155,6 +156,9 @@ export default function Landing() {
               <p className="text-sm text-muted-foreground truncate">
                 → {result.long_url}
               </p>
+              <div className="pt-2">
+                <QrCard value={result.short_url} filename={result.code} />
+              </div>
             </CardContent>
           </Card>
         )}

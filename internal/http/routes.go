@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,8 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/kongken/urlo/internal/auth"
 	"github.com/kongken/urlo/internal/clicks"
@@ -21,68 +18,74 @@ import (
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
 )
 
-// protoJSON marshals proto messages with snake_case field names so that
-// well-known types (notably google.protobuf.Timestamp) serialize as
-// RFC 3339 strings instead of the default {seconds, nanos} struct.
-var protoJSON = protojson.MarshalOptions{UseProtoNames: true}
-
-// writeProto sends a single proto message as the response body.
-func writeProto(c *gin.Context, statusCode int, msg proto.Message) {
-	b, err := protoJSON.Marshal(msg)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "internal",
-			"message": "marshal: " + err.Error(),
-		})
-		return
-	}
-	c.Data(statusCode, "application/json; charset=utf-8", b)
+// shortLinkDTO mirrors urlov1.ShortLink for the HTTP/JSON wire. Using a
+// dedicated DTO lets stdlib json.Marshal emit time.Time as RFC 3339 and
+// int64 as a JSON number; the proto-generated struct would otherwise
+// serialize Timestamp as {seconds, nanos} via the default encoder.
+type shortLinkDTO struct {
+	Code       string     `json:"code"`
+	LongURL    string     `json:"long_url"`
+	ShortURL   string     `json:"short_url"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	VisitCount int64      `json:"visit_count"`
 }
 
-// writeJSONWith renders an object literal where some fields are proto
-// messages (encoded via protojson) and others are plain values.
-func writeJSONWith(c *gin.Context, statusCode int, fields map[string]any) {
-	wrapped := make(map[string]json.RawMessage, len(fields))
-	for k, v := range fields {
-		var raw []byte
-		var err error
-		switch tv := v.(type) {
-		case proto.Message:
-			raw, err = protoJSON.Marshal(tv)
-		case []proto.Message:
-			parts := make([]json.RawMessage, 0, len(tv))
-			for _, m := range tv {
-				p, mErr := protoJSON.Marshal(m)
-				if mErr != nil {
-					err = mErr
-					break
-				}
-				parts = append(parts, p)
-			}
-			if err == nil {
-				raw, err = json.Marshal(parts)
-			}
-		default:
-			raw, err = json.Marshal(v)
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "internal",
-				"message": "marshal: " + err.Error(),
-			})
-			return
-		}
-		wrapped[k] = raw
+func toShortLinkDTO(l *urlov1.ShortLink) shortLinkDTO {
+	dto := shortLinkDTO{
+		Code:       l.GetCode(),
+		LongURL:    l.GetLongUrl(),
+		ShortURL:   l.GetShortUrl(),
+		VisitCount: l.GetVisitCount(),
 	}
-	out, err := json.Marshal(wrapped)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "internal",
-			"message": "marshal: " + err.Error(),
-		})
-		return
+	if t := l.GetCreatedAt(); t != nil {
+		dto.CreatedAt = t.AsTime()
 	}
-	c.Data(statusCode, "application/json; charset=utf-8", out)
+	if t := l.GetExpiresAt(); t != nil {
+		ts := t.AsTime()
+		dto.ExpiresAt = &ts
+	}
+	return dto
+}
+
+// clickEventDTO mirrors urlov1.ClickEvent for the HTTP/JSON wire.
+type clickEventDTO struct {
+	ID           string    `json:"id"`
+	Code         string    `json:"code"`
+	Ts           time.Time `json:"ts"`
+	IPHash       string    `json:"ip_hash,omitempty"`
+	Country      string    `json:"country,omitempty"`
+	City         string    `json:"city,omitempty"`
+	Referrer     string    `json:"referrer,omitempty"`
+	ReferrerHost string    `json:"referrer_host,omitempty"`
+	UserAgent    string    `json:"user_agent,omitempty"`
+	Browser      string    `json:"browser,omitempty"`
+	OS           string    `json:"os,omitempty"`
+	Device       string    `json:"device,omitempty"`
+	Lang         string    `json:"lang,omitempty"`
+	IsBot        bool      `json:"is_bot,omitempty"`
+}
+
+func toClickEventDTO(e *urlov1.ClickEvent) clickEventDTO {
+	dto := clickEventDTO{
+		ID:           e.GetId(),
+		Code:         e.GetCode(),
+		IPHash:       e.GetIpHash(),
+		Country:      e.GetCountry(),
+		City:         e.GetCity(),
+		Referrer:     e.GetReferrer(),
+		ReferrerHost: e.GetReferrerHost(),
+		UserAgent:    e.GetUserAgent(),
+		Browser:      e.GetBrowser(),
+		OS:           e.GetOs(),
+		Device:       e.GetDevice(),
+		Lang:         e.GetLang(),
+		IsBot:        e.GetIsBot(),
+	}
+	if t := e.GetTs(); t != nil {
+		dto.Ts = t.AsTime()
+	}
+	return dto
 }
 
 // RegisterRoutes wires the URL shortener HTTP API onto r, backed by svc.
@@ -308,7 +311,7 @@ func handleShorten(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		writeProto(c, http.StatusCreated, resp.GetLink())
+		c.JSON(http.StatusCreated, toShortLinkDTO(resp.GetLink()))
 	}
 }
 
@@ -320,11 +323,11 @@ func handleListMine(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		msgs := make([]proto.Message, 0, len(links))
+		out := make([]shortLinkDTO, 0, len(links))
 		for _, l := range links {
-			msgs = append(msgs, l)
+			out = append(out, toShortLinkDTO(l))
 		}
-		writeJSONWith(c, http.StatusOK, map[string]any{"links": msgs})
+		c.JSON(http.StatusOK, gin.H{"links": out})
 	}
 }
 
@@ -337,7 +340,7 @@ func handleResolve(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		writeProto(c, http.StatusOK, resp.GetLink())
+		c.JSON(http.StatusOK, toShortLinkDTO(resp.GetLink()))
 	}
 }
 
@@ -352,7 +355,7 @@ func handleGetStats(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		writeProto(c, http.StatusOK, link)
+		c.JSON(http.StatusOK, toShortLinkDTO(link))
 	}
 }
 
@@ -433,12 +436,12 @@ func handleListClicks(svc *url.Service) gin.HandlerFunc {
 			return
 		}
 		events := resp.GetEvents()
-		msgs := make([]proto.Message, 0, len(events))
+		out := make([]clickEventDTO, 0, len(events))
 		for _, e := range events {
-			msgs = append(msgs, e)
+			out = append(out, toClickEventDTO(e))
 		}
-		writeJSONWith(c, http.StatusOK, map[string]any{
-			"events":          msgs,
+		c.JSON(http.StatusOK, gin.H{
+			"events":          out,
 			"next_page_token": resp.GetNextPageToken(),
 		})
 	}

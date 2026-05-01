@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { BarChart3, Copy, RefreshCw, Trash2, Search } from "lucide-react"
+import { BarChart3, Copy, QrCode, RefreshCw, Trash2, Search } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
@@ -20,6 +20,13 @@ import {
   upsertLocalLink,
   type ShortLink,
 } from "@/lib/api"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { QrCard } from "@/components/QrCard"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -31,6 +38,7 @@ export default function Dashboard() {
   const { user, loading: authLoading } = useAuth()
   const [links, setLinks] = useState<ShortLink[]>([])
   const [filter, setFilter] = useState("")
+  const [qrLink, setQrLink] = useState<ShortLink | null>(null)
 
   const loadLinks = async () => {
     if (user) {
@@ -199,6 +207,14 @@ export default function Dashboard() {
                         <Button
                           size="icon"
                           variant="ghost"
+                          onClick={() => setQrLink(link)}
+                          title="QR code"
+                        >
+                          <QrCode className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           onClick={() => refresh(link.code)}
                           title="Refresh stats"
                         >
@@ -228,6 +244,25 @@ export default function Dashboard() {
           </Table>
         )}
       </Card>
+
+      <Dialog open={!!qrLink} onOpenChange={(open) => !open && setQrLink(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-base">
+              {qrLink?.short_url.replace(/^https?:\/\//, "")}
+            </DialogTitle>
+          </DialogHeader>
+          {qrLink && (
+            <div className="flex flex-col items-center gap-4">
+              <QrCard
+                value={qrLink.short_url}
+                filename={qrLink.code}
+                size={220}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

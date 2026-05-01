@@ -18,6 +18,7 @@ import {
   type ShortLink,
 } from "@/lib/api"
 import { useAuth } from "@/contexts/AuthContext"
+import { QrCard } from "@/components/QrCard"
 import { toast } from "sonner"
 
 const FETCH_PAGE_SIZE = 500
@@ -285,6 +286,9 @@ export default function Analytics() {
               >
                 {link.long_url}
               </a>
+            </div>
+            <div className="pt-2">
+              <QrCard value={link.short_url} filename={link.code} />
             </div>
           </CardContent>
         </Card>
