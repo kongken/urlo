@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, upsertLocalLink, type ShortLink } from "@/lib/api"
+import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
 
 const features = [
@@ -25,6 +26,7 @@ const features = [
 ]
 
 export default function Landing() {
+  const { user } = useAuth()
   const [longUrl, setLongUrl] = useState("")
   const [customCode, setCustomCode] = useState("")
   const [loading, setLoading] = useState(false)
@@ -40,7 +42,7 @@ export default function Landing() {
         long_url: longUrl.trim(),
         custom_code: customCode.trim() || undefined,
       })
-      upsertLocalLink(link)
+      if (!user) upsertLocalLink(link)
       setResult(link)
       toast.success("Short link created")
     } catch (err) {

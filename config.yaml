@@ -52,6 +52,23 @@ rate_limit:
 #       password: ""
 #       db: 0
 
+# ----------------------------------------------------------------------
+# Google login + session JWT.
+#   When auth.google.client_id is empty, login is disabled and all links
+#   are anonymous. Otherwise the session cookie is issued after a
+#   successful Google ID-token exchange via POST /api/v1/auth/google.
+# ----------------------------------------------------------------------
+auth:
+  google:
+    client_id: ""
+  session:
+    # Required when auth.google.client_id is set. Min 16 chars.
+    jwt_secret: ""
+    cookie_name: "urlo_session"
+    ttl_hours: 168
+    # Set true behind HTTPS; false for local http://localhost dev.
+    secure: false
+
 log:
   level: "info"
   format: "text"

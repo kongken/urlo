@@ -29,6 +29,7 @@ function getBaseUrl(): string {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${getBaseUrl()}${path}`, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
@@ -40,9 +41,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const data = text ? JSON.parse(text) : null
   if (!res.ok) {
     const err = data as ApiError | null
-    throw new Error(err?.message || err?.error || `HTTP ${res.status}`)
+    const e = new Error(err?.message || err?.error || `HTTP ${res.status}`) as Error & { status?: number }
+    e.status = res.status
+    throw e
   }
   return data as T
+}
+
+export interface AuthUser {
+  sub: string
+  email?: string
+  name?: string
 }
 
 export const api = {
@@ -62,6 +71,22 @@ export const api = {
     return request<void>(`/api/v1/urls/${encodeURIComponent(code)}`, {
       method: "DELETE",
     })
+  },
+  listMine() {
+    return request<{ links: ShortLink[] }>("/api/v1/urls").then((r) => r.links ?? [])
+  },
+  // Auth
+  loginWithGoogle(idToken: string) {
+    return request<{ user: AuthUser }>("/api/v1/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ id_token: idToken }),
+    }).then((r) => r.user)
+  },
+  logout() {
+    return request<void>("/api/v1/auth/logout", { method: "POST" })
+  },
+  me() {
+    return request<{ user: AuthUser }>("/api/v1/auth/me").then((r) => r.user)
   },
 }
 

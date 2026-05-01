@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"butterfly.orx.me/core/app"
 	butterflyredis "butterfly.orx.me/core/store/redis"
 	butterflys3 "butterfly.orx.me/core/store/s3"
 	"github.com/gin-gonic/gin"
+	"github.com/kongken/urlo/internal/auth"
 	"github.com/kongken/urlo/internal/config"
 	apihttp "github.com/kongken/urlo/internal/http"
 	"github.com/kongken/urlo/internal/ratelimit"
@@ -21,7 +23,14 @@ import (
 func main() {
 	svcConfig := &config.ServiceConfig{}
 	urlSvc := url.NewService(url.Options{})
-	var shortenLimiter *ratelimit.Limiter
+	var (
+		shortenLimiter *ratelimit.Limiter
+		verifier       auth.Verifier
+		sessions       auth.Sessions
+		cookieName     string
+		cookieSecure   bool
+		cookieTTL      time.Duration
+	)
 
 	appConfig := &app.Config{
 		Service:   "urlo",
@@ -31,7 +40,10 @@ func main() {
 			r.GET("/ping", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "pong"})
 			})
-			apihttp.RegisterRoutes(r, urlSvc, apihttp.WithShortenLimiter(shortenLimiter))
+			apihttp.RegisterRoutes(r, urlSvc,
+				apihttp.WithShortenLimiter(shortenLimiter),
+				apihttp.WithAuth(verifier, sessions, cookieName, cookieSecure, cookieTTL),
+			)
 		},
 		GRPCRegister: func(s *grpc.Server) {
 			urlov1.RegisterUrlServiceServer(s, urlSvc)
@@ -56,12 +68,43 @@ func main() {
 						"per_hour", svcConfig.RateLimit.PerHour,
 						"redis", svcConfig.RateLimit.RedisConfigName)
 				}
+
+				if v, s, name, secure, ttl, err := buildAuth(svcConfig.Auth); err != nil {
+					return fmt.Errorf("build auth: %w", err)
+				} else if v != nil {
+					verifier, sessions, cookieName, cookieSecure, cookieTTL = v, s, name, secure, ttl
+					slog.Info("google login enabled", "cookie", name, "ttl", ttl)
+				} else {
+					slog.Info("google login disabled (auth.google.client_id not set)")
+				}
 				return nil
 			},
 		},
 	}
 
 	app.New(appConfig).Run()
+}
+
+func buildAuth(c config.AuthConfig) (auth.Verifier, auth.Sessions, string, bool, time.Duration, error) {
+	if c.Google.ClientID == "" {
+		return nil, nil, "", false, 0, nil
+	}
+	if c.Session.JWTSecret == "" {
+		return nil, nil, "", false, 0, errors.New("auth.session.jwt_secret is required when auth.google.client_id is set")
+	}
+	sess, err := auth.NewHMACSessions(c.Session.JWTSecret)
+	if err != nil {
+		return nil, nil, "", false, 0, err
+	}
+	cookieName := c.Session.CookieName
+	if cookieName == "" {
+		cookieName = "urlo_session"
+	}
+	ttlHours := c.Session.TTLHours
+	if ttlHours <= 0 {
+		ttlHours = 168
+	}
+	return auth.NewGoogleVerifier(c.Google.ClientID), sess, cookieName, c.Session.Secure, time.Duration(ttlHours) * time.Hour, nil
 }
 
 func buildShortenLimiter(c config.RateLimitConfig) (*ratelimit.Limiter, error) {

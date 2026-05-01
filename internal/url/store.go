@@ -10,6 +10,7 @@ import (
 type Record struct {
 	Code       string    `json:"code"`
 	LongURL    string    `json:"long_url"`
+	OwnerID    string    `json:"owner_id,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	ExpiresAt  time.Time `json:"expires_at,omitzero"`
 	VisitCount int64     `json:"visit_count"`
@@ -31,6 +32,10 @@ type Store interface {
 	// IncrVisit atomically (best-effort) increments VisitCount and returns
 	// the updated record.
 	IncrVisit(ctx context.Context, code string) (*Record, error)
+	// ListByOwner returns records whose OwnerID matches ownerID.
+	// Empty ownerID is invalid — implementations should return an empty
+	// slice rather than every record.
+	ListByOwner(ctx context.Context, ownerID string) ([]*Record, error)
 }
 
 var (

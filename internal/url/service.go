@@ -67,6 +67,12 @@ func (s *Service) SetStore(store Store) {
 }
 
 func (s *Service) Shorten(ctx context.Context, req *urlov1.ShortenRequest) (*urlov1.ShortenResponse, error) {
+	return s.ShortenWithOwner(ctx, req, "")
+}
+
+// ShortenWithOwner is like Shorten but tags the new record with ownerID.
+// Pass "" to create an anonymous link.
+func (s *Service) ShortenWithOwner(ctx context.Context, req *urlov1.ShortenRequest, ownerID string) (*urlov1.ShortenResponse, error) {
 	if req.GetLongUrl() == "" {
 		return nil, status.Error(codes.InvalidArgument, "long_url is required")
 	}
@@ -87,7 +93,7 @@ func (s *Service) Shorten(ctx context.Context, req *urlov1.ShortenRequest) (*url
 		if !isValidCode(code) {
 			return nil, status.Error(codes.InvalidArgument, "custom_code must be 1-32 chars from [A-Za-z0-9]")
 		}
-		r := &Record{Code: code, LongURL: req.GetLongUrl(), CreatedAt: now, ExpiresAt: expiresAt}
+		r := &Record{Code: code, LongURL: req.GetLongUrl(), OwnerID: ownerID, CreatedAt: now, ExpiresAt: expiresAt}
 		if err := s.store.Create(ctx, r); err != nil {
 			return nil, mapStoreErr(err, code)
 		}
@@ -99,7 +105,7 @@ func (s *Service) Shorten(ctx context.Context, req *urlov1.ShortenRequest) (*url
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "generate code: %v", err)
 		}
-		r := &Record{Code: code, LongURL: req.GetLongUrl(), CreatedAt: now, ExpiresAt: expiresAt}
+		r := &Record{Code: code, LongURL: req.GetLongUrl(), OwnerID: ownerID, CreatedAt: now, ExpiresAt: expiresAt}
 		err = s.store.Create(ctx, r)
 		if err == nil {
 			return &urlov1.ShortenResponse{Link: s.toProto(r)}, nil
@@ -109,6 +115,60 @@ func (s *Service) Shorten(ctx context.Context, req *urlov1.ShortenRequest) (*url
 		}
 	}
 	return nil, status.Error(codes.Internal, "failed to generate unique code after 8 attempts")
+}
+
+// ListByOwner returns all (non-expired) ShortLinks owned by ownerID.
+func (s *Service) ListByOwner(ctx context.Context, ownerID string) ([]*urlov1.ShortLink, error) {
+	if ownerID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ownerID is required")
+	}
+	records, err := s.store.ListByOwner(ctx, ownerID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list: %v", err)
+	}
+	out := make([]*urlov1.ShortLink, 0, len(records))
+	for _, r := range records {
+		if r.Expired() {
+			continue
+		}
+		out = append(out, s.toProto(r))
+	}
+	return out, nil
+}
+
+// DeleteAs deletes a record, enforcing owner. If the record has an owner,
+// ownerID must match. If the record has no owner, deletion is allowed
+// (legacy/anonymous links).
+func (s *Service) DeleteAs(ctx context.Context, code, ownerID string) error {
+	if code == "" {
+		return status.Error(codes.InvalidArgument, "code is required")
+	}
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return mapStoreErr(err, code)
+	}
+	if r.OwnerID != "" && r.OwnerID != ownerID {
+		return status.Error(codes.PermissionDenied, "not owner")
+	}
+	if err := s.store.Delete(ctx, code); err != nil {
+		return mapStoreErr(err, code)
+	}
+	return nil
+}
+
+// GetStatsAs returns stats with the same ownership rules as DeleteAs.
+func (s *Service) GetStatsAs(ctx context.Context, code, ownerID string) (*urlov1.ShortLink, error) {
+	if code == "" {
+		return nil, status.Error(codes.InvalidArgument, "code is required")
+	}
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+	if r.OwnerID != "" && r.OwnerID != ownerID {
+		return nil, status.Error(codes.PermissionDenied, "not owner")
+	}
+	return s.toProto(r), nil
 }
 
 func (s *Service) Resolve(ctx context.Context, req *urlov1.ResolveRequest) (*urlov1.ResolveResponse, error) {
