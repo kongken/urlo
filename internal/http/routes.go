@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/kongken/urlo/internal/auth"
 	"github.com/kongken/urlo/internal/clicks"
@@ -17,6 +20,70 @@ import (
 	"github.com/kongken/urlo/internal/url"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
 )
+
+// protoJSON marshals proto messages with snake_case field names so that
+// well-known types (notably google.protobuf.Timestamp) serialize as
+// RFC 3339 strings instead of the default {seconds, nanos} struct.
+var protoJSON = protojson.MarshalOptions{UseProtoNames: true}
+
+// writeProto sends a single proto message as the response body.
+func writeProto(c *gin.Context, statusCode int, msg proto.Message) {
+	b, err := protoJSON.Marshal(msg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "marshal: " + err.Error(),
+		})
+		return
+	}
+	c.Data(statusCode, "application/json; charset=utf-8", b)
+}
+
+// writeJSONWith renders an object literal where some fields are proto
+// messages (encoded via protojson) and others are plain values.
+func writeJSONWith(c *gin.Context, statusCode int, fields map[string]any) {
+	wrapped := make(map[string]json.RawMessage, len(fields))
+	for k, v := range fields {
+		var raw []byte
+		var err error
+		switch tv := v.(type) {
+		case proto.Message:
+			raw, err = protoJSON.Marshal(tv)
+		case []proto.Message:
+			parts := make([]json.RawMessage, 0, len(tv))
+			for _, m := range tv {
+				p, mErr := protoJSON.Marshal(m)
+				if mErr != nil {
+					err = mErr
+					break
+				}
+				parts = append(parts, p)
+			}
+			if err == nil {
+				raw, err = json.Marshal(parts)
+			}
+		default:
+			raw, err = json.Marshal(v)
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "marshal: " + err.Error(),
+			})
+			return
+		}
+		wrapped[k] = raw
+	}
+	out, err := json.Marshal(wrapped)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "marshal: " + err.Error(),
+		})
+		return
+	}
+	c.Data(statusCode, "application/json; charset=utf-8", out)
+}
 
 // RegisterRoutes wires the URL shortener HTTP API onto r, backed by svc.
 //
@@ -241,7 +308,7 @@ func handleShorten(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		c.JSON(http.StatusCreated, resp.GetLink())
+		writeProto(c, http.StatusCreated, resp.GetLink())
 	}
 }
 
@@ -253,7 +320,11 @@ func handleListMine(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"links": links})
+		msgs := make([]proto.Message, 0, len(links))
+		for _, l := range links {
+			msgs = append(msgs, l)
+		}
+		writeJSONWith(c, http.StatusOK, map[string]any{"links": msgs})
 	}
 }
 
@@ -266,7 +337,7 @@ func handleResolve(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, resp.GetLink())
+		writeProto(c, http.StatusOK, resp.GetLink())
 	}
 }
 
@@ -281,7 +352,7 @@ func handleGetStats(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, link)
+		writeProto(c, http.StatusOK, link)
 	}
 }
 
@@ -361,8 +432,13 @@ func handleListClicks(svc *url.Service) gin.HandlerFunc {
 			writeStatusError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"events":          resp.GetEvents(),
+		events := resp.GetEvents()
+		msgs := make([]proto.Message, 0, len(events))
+		for _, e := range events {
+			msgs = append(msgs, e)
+		}
+		writeJSONWith(c, http.StatusOK, map[string]any{
+			"events":          msgs,
 			"next_page_token": resp.GetNextPageToken(),
 		})
 	}
