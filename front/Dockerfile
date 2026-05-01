@@ -8,24 +8,27 @@ RUN pnpm install --frozen-lockfile
 
 # Build-time public env (inlined by Vite into the bundle).
 # Override with: docker build --build-arg VITE_GOOGLE_CLIENT_ID=...
+#
+# Vite only reads VITE_* from .env* files, not from process.env, so we
+# must materialise the value into .env.production before `pnpm build`.
 ARG VITE_GOOGLE_CLIENT_ID=""
-ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 
-# Debug: confirm the build arg arrived (length only, never echo the value).
+COPY . .
+
 RUN echo "[build] VITE_GOOGLE_CLIENT_ID length=${#VITE_GOOGLE_CLIENT_ID}" \
  && if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then \
       echo "[build] WARNING: VITE_GOOGLE_CLIENT_ID is empty — login will be disabled"; \
     else \
       echo "[build] VITE_GOOGLE_CLIENT_ID prefix=$(printf '%s' "$VITE_GOOGLE_CLIENT_ID" | head -c 12)…"; \
+      printf 'VITE_GOOGLE_CLIENT_ID=%s\n' "$VITE_GOOGLE_CLIENT_ID" > .env.production; \
+      echo "[build] wrote .env.production ($(wc -c < .env.production) bytes)"; \
     fi
 
-COPY . .
 RUN pnpm build
 
-# Debug: verify the value made it into the bundle. Prints whether the
-# 'apps.googleusercontent.com' suffix is present and the count of matches.
-RUN echo "[post-build] occurrences of 'googleusercontent.com' in dist:" \
- && grep -roc 'googleusercontent\.com' dist/assets || true
+# Verify the value made it into the bundle.
+RUN echo "[post-build] grep googleusercontent.com in dist/assets:" \
+ && (grep -rl 'googleusercontent\.com' dist/assets || echo "  NONE FOUND")
 
 FROM nginx:alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
