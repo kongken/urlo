@@ -24,35 +24,41 @@ var File_urlo_v1_service_proto protoreflect.FileDescriptor
 
 const file_urlo_v1_service_proto_rawDesc = "" +
 	"\n" +
-	"\x15urlo/v1/service.proto\x12\aurlo.v1\x1a\x11urlo/v1/url.proto2\x84\x02\n" +
+	"\x15urlo/v1/service.proto\x12\aurlo.v1\x1a\x11urlo/v1/url.proto2\xcb\x02\n" +
 	"\n" +
 	"UrlService\x12<\n" +
 	"\aShorten\x12\x17.urlo.v1.ShortenRequest\x1a\x18.urlo.v1.ShortenResponse\x12<\n" +
 	"\aResolve\x12\x17.urlo.v1.ResolveRequest\x1a\x18.urlo.v1.ResolveResponse\x12?\n" +
 	"\bGetStats\x12\x18.urlo.v1.GetStatsRequest\x1a\x19.urlo.v1.GetStatsResponse\x129\n" +
-	"\x06Delete\x12\x16.urlo.v1.DeleteRequest\x1a\x17.urlo.v1.DeleteResponseB2Z0github.com/kongken/urlo/pkg/proto/urlo/v1;urlov1b\x06proto3"
+	"\x06Delete\x12\x16.urlo.v1.DeleteRequest\x1a\x17.urlo.v1.DeleteResponse\x12E\n" +
+	"\n" +
+	"ListClicks\x12\x1a.urlo.v1.ListClicksRequest\x1a\x1b.urlo.v1.ListClicksResponseB2Z0github.com/kongken/urlo/pkg/proto/urlo/v1;urlov1b\x06proto3"
 
 var file_urlo_v1_service_proto_goTypes = []any{
-	(*ShortenRequest)(nil),   // 0: urlo.v1.ShortenRequest
-	(*ResolveRequest)(nil),   // 1: urlo.v1.ResolveRequest
-	(*GetStatsRequest)(nil),  // 2: urlo.v1.GetStatsRequest
-	(*DeleteRequest)(nil),    // 3: urlo.v1.DeleteRequest
-	(*ShortenResponse)(nil),  // 4: urlo.v1.ShortenResponse
-	(*ResolveResponse)(nil),  // 5: urlo.v1.ResolveResponse
-	(*GetStatsResponse)(nil), // 6: urlo.v1.GetStatsResponse
-	(*DeleteResponse)(nil),   // 7: urlo.v1.DeleteResponse
+	(*ShortenRequest)(nil),     // 0: urlo.v1.ShortenRequest
+	(*ResolveRequest)(nil),     // 1: urlo.v1.ResolveRequest
+	(*GetStatsRequest)(nil),    // 2: urlo.v1.GetStatsRequest
+	(*DeleteRequest)(nil),      // 3: urlo.v1.DeleteRequest
+	(*ListClicksRequest)(nil),  // 4: urlo.v1.ListClicksRequest
+	(*ShortenResponse)(nil),    // 5: urlo.v1.ShortenResponse
+	(*ResolveResponse)(nil),    // 6: urlo.v1.ResolveResponse
+	(*GetStatsResponse)(nil),   // 7: urlo.v1.GetStatsResponse
+	(*DeleteResponse)(nil),     // 8: urlo.v1.DeleteResponse
+	(*ListClicksResponse)(nil), // 9: urlo.v1.ListClicksResponse
 }
 var file_urlo_v1_service_proto_depIdxs = []int32{
 	0, // 0: urlo.v1.UrlService.Shorten:input_type -> urlo.v1.ShortenRequest
 	1, // 1: urlo.v1.UrlService.Resolve:input_type -> urlo.v1.ResolveRequest
 	2, // 2: urlo.v1.UrlService.GetStats:input_type -> urlo.v1.GetStatsRequest
 	3, // 3: urlo.v1.UrlService.Delete:input_type -> urlo.v1.DeleteRequest
-	4, // 4: urlo.v1.UrlService.Shorten:output_type -> urlo.v1.ShortenResponse
-	5, // 5: urlo.v1.UrlService.Resolve:output_type -> urlo.v1.ResolveResponse
-	6, // 6: urlo.v1.UrlService.GetStats:output_type -> urlo.v1.GetStatsResponse
-	7, // 7: urlo.v1.UrlService.Delete:output_type -> urlo.v1.DeleteResponse
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
+	4, // 4: urlo.v1.UrlService.ListClicks:input_type -> urlo.v1.ListClicksRequest
+	5, // 5: urlo.v1.UrlService.Shorten:output_type -> urlo.v1.ShortenResponse
+	6, // 6: urlo.v1.UrlService.Resolve:output_type -> urlo.v1.ResolveResponse
+	7, // 7: urlo.v1.UrlService.GetStats:output_type -> urlo.v1.GetStatsResponse
+	8, // 8: urlo.v1.UrlService.Delete:output_type -> urlo.v1.DeleteResponse
+	9, // 9: urlo.v1.UrlService.ListClicks:output_type -> urlo.v1.ListClicksResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name

@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UrlService_Shorten_FullMethodName  = "/urlo.v1.UrlService/Shorten"
-	UrlService_Resolve_FullMethodName  = "/urlo.v1.UrlService/Resolve"
-	UrlService_GetStats_FullMethodName = "/urlo.v1.UrlService/GetStats"
-	UrlService_Delete_FullMethodName   = "/urlo.v1.UrlService/Delete"
+	UrlService_Shorten_FullMethodName    = "/urlo.v1.UrlService/Shorten"
+	UrlService_Resolve_FullMethodName    = "/urlo.v1.UrlService/Resolve"
+	UrlService_GetStats_FullMethodName   = "/urlo.v1.UrlService/GetStats"
+	UrlService_Delete_FullMethodName     = "/urlo.v1.UrlService/Delete"
+	UrlService_ListClicks_FullMethodName = "/urlo.v1.UrlService/ListClicks"
 )
 
 // UrlServiceClient is the client API for UrlService service.
@@ -40,6 +41,8 @@ type UrlServiceClient interface {
 	Resolve(ctx context.Context, in *ResolveRequest, opts ...grpc.CallOption) (*ResolveResponse, error)
 	GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*GetStatsResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
+	// ListClicks returns recent click events for a short link, newest first.
+	ListClicks(ctx context.Context, in *ListClicksRequest, opts ...grpc.CallOption) (*ListClicksResponse, error)
 }
 
 type urlServiceClient struct {
@@ -90,6 +93,16 @@ func (c *urlServiceClient) Delete(ctx context.Context, in *DeleteRequest, opts .
 	return out, nil
 }
 
+func (c *urlServiceClient) ListClicks(ctx context.Context, in *ListClicksRequest, opts ...grpc.CallOption) (*ListClicksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListClicksResponse)
+	err := c.cc.Invoke(ctx, UrlService_ListClicks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UrlServiceServer is the server API for UrlService service.
 // All implementations must embed UnimplementedUrlServiceServer
 // for forward compatibility.
@@ -105,6 +118,8 @@ type UrlServiceServer interface {
 	Resolve(context.Context, *ResolveRequest) (*ResolveResponse, error)
 	GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
+	// ListClicks returns recent click events for a short link, newest first.
+	ListClicks(context.Context, *ListClicksRequest) (*ListClicksResponse, error)
 	mustEmbedUnimplementedUrlServiceServer()
 }
 
@@ -126,6 +141,9 @@ func (UnimplementedUrlServiceServer) GetStats(context.Context, *GetStatsRequest)
 }
 func (UnimplementedUrlServiceServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedUrlServiceServer) ListClicks(context.Context, *ListClicksRequest) (*ListClicksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListClicks not implemented")
 }
 func (UnimplementedUrlServiceServer) mustEmbedUnimplementedUrlServiceServer() {}
 func (UnimplementedUrlServiceServer) testEmbeddedByValue()                    {}
@@ -220,6 +238,24 @@ func _UrlService_Delete_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UrlService_ListClicks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListClicksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UrlServiceServer).ListClicks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UrlService_ListClicks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UrlServiceServer).ListClicks(ctx, req.(*ListClicksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UrlService_ServiceDesc is the grpc.ServiceDesc for UrlService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -242,6 +278,10 @@ var UrlService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Delete",
 			Handler:    _UrlService_Delete_Handler,
+		},
+		{
+			MethodName: "ListClicks",
+			Handler:    _UrlService_ListClicks_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

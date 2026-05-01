@@ -8,6 +8,25 @@ type ServiceConfig struct {
 	Storage     StorageConfig   `yaml:"storage"`
 	RateLimit   RateLimitConfig `yaml:"rate_limit"`
 	Auth        AuthConfig      `yaml:"auth"`
+	Clicks      ClicksConfig    `yaml:"clicks"`
+}
+
+// ClicksConfig configures click-event logging.
+//
+// Driver values:
+//   - "" / "none"    : disabled (default).
+//   - "redis_stream" : write to Redis Streams; requires RedisConfigName.
+type ClicksConfig struct {
+	Driver          string `yaml:"driver"`
+	RedisConfigName string `yaml:"redis_config_name"`
+	// KeyPrefix prefixes per-code stream keys (default "clicks").
+	KeyPrefix string `yaml:"key_prefix"`
+	// MaxLen caps each stream's length using XADD ~ MAXLEN. 0 disables.
+	MaxLen int64 `yaml:"max_len"`
+	// IPHashSalt is mixed into client-IP hashes. Empty disables IP hashing.
+	IPHashSalt string `yaml:"ip_hash_salt"`
+	// BufferSize bounds the in-memory async queue (default 1024).
+	BufferSize int `yaml:"buffer_size"`
 }
 
 // AuthConfig configures Google login + session JWT.

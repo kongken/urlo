@@ -11,6 +11,8 @@ import (
 	butterflys3 "butterfly.orx.me/core/store/s3"
 	"github.com/gin-gonic/gin"
 	"github.com/kongken/urlo/internal/auth"
+	"github.com/kongken/urlo/internal/clicks"
+	clicksredis "github.com/kongken/urlo/internal/clicks/redisstream"
 	"github.com/kongken/urlo/internal/config"
 	apihttp "github.com/kongken/urlo/internal/http"
 	"github.com/kongken/urlo/internal/ratelimit"
@@ -30,6 +32,7 @@ func main() {
 		cookieName     string
 		cookieSecure   bool
 		cookieTTL      time.Duration
+		clickIPSalt    string
 	)
 
 	appConfig := &app.Config{
@@ -43,6 +46,7 @@ func main() {
 			apihttp.RegisterRoutes(r, urlSvc,
 				apihttp.WithShortenLimiter(shortenLimiter),
 				apihttp.WithAuth(verifier, sessions, cookieName, cookieSecure, cookieTTL),
+				apihttp.WithIPHashSalt(clickIPSalt),
 			)
 		},
 		GRPCRegister: func(s *grpc.Server) {
@@ -76,6 +80,18 @@ func main() {
 					slog.Info("google login enabled", "cookie", name, "ttl", ttl)
 				} else {
 					slog.Info("google login disabled (auth.google.client_id not set)")
+				}
+
+				rec, err := buildClickRecorder(svcConfig.Clicks)
+				if err != nil {
+					return fmt.Errorf("build click recorder: %w", err)
+				}
+				if rec != nil {
+					urlSvc.SetRecorder(rec)
+					clickIPSalt = svcConfig.Clicks.IPHashSalt
+					slog.Info("click recorder enabled",
+						"driver", svcConfig.Clicks.Driver,
+						"max_len", svcConfig.Clicks.MaxLen)
 				}
 				return nil
 			},
@@ -122,6 +138,33 @@ func buildShortenLimiter(c config.RateLimitConfig) (*ratelimit.Limiter, error) {
 		return nil, fmt.Errorf("redis client %q not found in butterfly store config", c.RedisConfigName)
 	}
 	return ratelimit.New(client, "urlo:ratelimit:shorten", c.PerHour), nil
+}
+
+func buildClickRecorder(c config.ClicksConfig) (clicks.Recorder, error) {
+	switch c.Driver {
+	case "", "none":
+		return nil, nil
+	case "redis_stream":
+		if c.RedisConfigName == "" {
+			return nil, errors.New("clicks.redis_config_name is required for redis_stream driver")
+		}
+		client := butterflyredis.GetClient(c.RedisConfigName)
+		if client == nil {
+			return nil, fmt.Errorf("redis client %q not found in butterfly store config", c.RedisConfigName)
+		}
+		prefix := c.KeyPrefix
+		if prefix == "" {
+			prefix = "clicks"
+		}
+		return clicksredis.New(clicksredis.Options{
+			Client:     client,
+			KeyPrefix:  prefix,
+			MaxLen:     c.MaxLen,
+			BufferSize: c.BufferSize,
+		})
+	default:
+		return nil, fmt.Errorf("unknown clicks driver %q", c.Driver)
+	}
 }
 
 func buildStore(c config.StorageConfig) (url.Store, error) {

@@ -69,6 +69,21 @@ auth:
     # Set true behind HTTPS; false for local http://localhost dev.
     secure: false
 
+# ----------------------------------------------------------------------
+# Click event logging.
+#   driver: "none"          - disabled (default)
+#   driver: "redis_stream"  - write each redirect to a Redis Stream
+#                             keyed `{key_prefix}:{code}`, capped by max_len
+# Requires `store.redis.<redis_config_name>` when enabled.
+# ----------------------------------------------------------------------
+clicks:
+  driver: "none"
+  redis_config_name: "cache"
+  key_prefix: "clicks"
+  max_len: 10000
+  ip_hash_salt: ""
+  buffer_size: 1024
+
 log:
   level: "info"
   format: "text"

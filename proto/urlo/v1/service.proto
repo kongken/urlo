@@ -17,4 +17,6 @@ service UrlService {
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
+  // ListClicks returns recent click events for a short link, newest first.
+  rpc ListClicks(ListClicksRequest) returns (ListClicksResponse);
 }

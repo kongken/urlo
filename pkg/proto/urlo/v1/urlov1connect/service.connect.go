@@ -41,6 +41,8 @@ const (
 	UrlServiceGetStatsProcedure = "/urlo.v1.UrlService/GetStats"
 	// UrlServiceDeleteProcedure is the fully-qualified name of the UrlService's Delete RPC.
 	UrlServiceDeleteProcedure = "/urlo.v1.UrlService/Delete"
+	// UrlServiceListClicksProcedure is the fully-qualified name of the UrlService's ListClicks RPC.
+	UrlServiceListClicksProcedure = "/urlo.v1.UrlService/ListClicks"
 )
 
 // UrlServiceClient is a client for the urlo.v1.UrlService service.
@@ -49,6 +51,8 @@ type UrlServiceClient interface {
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	GetStats(context.Context, *connect.Request[v1.GetStatsRequest]) (*connect.Response[v1.GetStatsResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	// ListClicks returns recent click events for a short link, newest first.
+	ListClicks(context.Context, *connect.Request[v1.ListClicksRequest]) (*connect.Response[v1.ListClicksResponse], error)
 }
 
 // NewUrlServiceClient constructs a client for the urlo.v1.UrlService service. By default, it uses
@@ -86,15 +90,22 @@ func NewUrlServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(urlServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		listClicks: connect.NewClient[v1.ListClicksRequest, v1.ListClicksResponse](
+			httpClient,
+			baseURL+UrlServiceListClicksProcedure,
+			connect.WithSchema(urlServiceMethods.ByName("ListClicks")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // urlServiceClient implements UrlServiceClient.
 type urlServiceClient struct {
-	shorten  *connect.Client[v1.ShortenRequest, v1.ShortenResponse]
-	resolve  *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
-	getStats *connect.Client[v1.GetStatsRequest, v1.GetStatsResponse]
-	delete   *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	shorten    *connect.Client[v1.ShortenRequest, v1.ShortenResponse]
+	resolve    *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	getStats   *connect.Client[v1.GetStatsRequest, v1.GetStatsResponse]
+	delete     *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	listClicks *connect.Client[v1.ListClicksRequest, v1.ListClicksResponse]
 }
 
 // Shorten calls urlo.v1.UrlService.Shorten.
@@ -117,12 +128,19 @@ func (c *urlServiceClient) Delete(ctx context.Context, req *connect.Request[v1.D
 	return c.delete.CallUnary(ctx, req)
 }
 
+// ListClicks calls urlo.v1.UrlService.ListClicks.
+func (c *urlServiceClient) ListClicks(ctx context.Context, req *connect.Request[v1.ListClicksRequest]) (*connect.Response[v1.ListClicksResponse], error) {
+	return c.listClicks.CallUnary(ctx, req)
+}
+
 // UrlServiceHandler is an implementation of the urlo.v1.UrlService service.
 type UrlServiceHandler interface {
 	Shorten(context.Context, *connect.Request[v1.ShortenRequest]) (*connect.Response[v1.ShortenResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	GetStats(context.Context, *connect.Request[v1.GetStatsRequest]) (*connect.Response[v1.GetStatsResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	// ListClicks returns recent click events for a short link, newest first.
+	ListClicks(context.Context, *connect.Request[v1.ListClicksRequest]) (*connect.Response[v1.ListClicksResponse], error)
 }
 
 // NewUrlServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -156,6 +174,12 @@ func NewUrlServiceHandler(svc UrlServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(urlServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	urlServiceListClicksHandler := connect.NewUnaryHandler(
+		UrlServiceListClicksProcedure,
+		svc.ListClicks,
+		connect.WithSchema(urlServiceMethods.ByName("ListClicks")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/urlo.v1.UrlService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UrlServiceShortenProcedure:
@@ -166,6 +190,8 @@ func NewUrlServiceHandler(svc UrlServiceHandler, opts ...connect.HandlerOption) 
 			urlServiceGetStatsHandler.ServeHTTP(w, r)
 		case UrlServiceDeleteProcedure:
 			urlServiceDeleteHandler.ServeHTTP(w, r)
+		case UrlServiceListClicksProcedure:
+			urlServiceListClicksHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -189,4 +215,8 @@ func (UnimplementedUrlServiceHandler) GetStats(context.Context, *connect.Request
 
 func (UnimplementedUrlServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("urlo.v1.UrlService.Delete is not implemented"))
+}
+
+func (UnimplementedUrlServiceHandler) ListClicks(context.Context, *connect.Request[v1.ListClicksRequest]) (*connect.Response[v1.ListClicksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("urlo.v1.UrlService.ListClicks is not implemented"))
 }

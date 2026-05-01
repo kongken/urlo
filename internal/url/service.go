@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/kongken/urlo/internal/clicks"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
 )
 
@@ -26,7 +27,8 @@ const (
 type Service struct {
 	urlov1.UnimplementedUrlServiceServer
 
-	store Store
+	store    Store
+	recorder clicks.Recorder
 
 	mu      sync.RWMutex
 	baseURL string
@@ -45,9 +47,28 @@ func NewService(opts Options) *Service {
 		store = NewMemoryStore()
 	}
 	return &Service{
-		store:   store,
-		baseURL: opts.BaseURL,
+		store:    store,
+		recorder: clicks.Nop{},
+		baseURL:  opts.BaseURL,
 	}
+}
+
+// SetRecorder swaps the click recorder. Pass nil to disable recording.
+// Intended to be called once during app init.
+func (s *Service) SetRecorder(r clicks.Recorder) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r == nil {
+		r = clicks.Nop{}
+	}
+	s.recorder = r
+}
+
+// Recorder returns the active click recorder. Never nil.
+func (s *Service) Recorder() clicks.Recorder {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.recorder
 }
 
 // SetBaseURL updates the base URL used to build ShortLink.short_url.
@@ -215,6 +236,53 @@ func (s *Service) Delete(ctx context.Context, req *urlov1.DeleteRequest) (*urlov
 		return nil, mapStoreErr(err, code)
 	}
 	return &urlov1.DeleteResponse{}, nil
+}
+
+func (s *Service) ListClicks(ctx context.Context, req *urlov1.ListClicksRequest) (*urlov1.ListClicksResponse, error) {
+	code := req.GetCode()
+	if code == "" {
+		return nil, status.Error(codes.InvalidArgument, "code is required")
+	}
+	// Verify the link exists so callers get NotFound rather than empty list.
+	if _, err := s.store.Get(ctx, code); err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+
+	rec := s.Recorder()
+	events, next, err := rec.List(ctx, code, clicks.ListOptions{
+		PageSize:  int(req.GetPageSize()),
+		PageToken: req.GetPageToken(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list clicks: %v", err)
+	}
+	out := make([]*urlov1.ClickEvent, 0, len(events))
+	for _, e := range events {
+		out = append(out, clickToProto(e))
+	}
+	return &urlov1.ListClicksResponse{Events: out, NextPageToken: next}, nil
+}
+
+func clickToProto(e clicks.Event) *urlov1.ClickEvent {
+	pe := &urlov1.ClickEvent{
+		Id:           e.ID,
+		Code:         e.Code,
+		IpHash:       e.IPHash,
+		Country:      e.Country,
+		City:         e.City,
+		Referrer:     e.Referrer,
+		ReferrerHost: e.ReferrerHost,
+		UserAgent:    e.UserAgent,
+		Browser:      e.Browser,
+		Os:           e.OS,
+		Device:       e.Device,
+		Lang:         e.Lang,
+		IsBot:        e.IsBot,
+	}
+	if !e.Timestamp.IsZero() {
+		pe.Ts = timestamppb.New(e.Timestamp)
+	}
+	return pe
 }
 
 func (s *Service) toProto(r *Record) *urlov1.ShortLink {

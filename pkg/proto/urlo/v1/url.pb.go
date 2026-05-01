@@ -473,6 +473,276 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 	return file_urlo_v1_url_proto_rawDescGZIP(), []int{8}
 }
 
+// ClickEvent is a single recorded redirect.
+type ClickEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Server-assigned event id (e.g. redis stream id "1714521600123-0").
+	Id   string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Code string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	Ts   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=ts,proto3" json:"ts,omitempty"`
+	// Hashed client IP (sha256(ip+salt) hex, first 16 bytes). Empty if disabled.
+	IpHash  string `protobuf:"bytes,4,opt,name=ip_hash,json=ipHash,proto3" json:"ip_hash,omitempty"`
+	Country string `protobuf:"bytes,5,opt,name=country,proto3" json:"country,omitempty"`
+	City    string `protobuf:"bytes,6,opt,name=city,proto3" json:"city,omitempty"`
+	// Full Referer header value.
+	Referrer string `protobuf:"bytes,7,opt,name=referrer,proto3" json:"referrer,omitempty"`
+	// Hostname extracted from referrer (e.g. "google.com").
+	ReferrerHost string `protobuf:"bytes,8,opt,name=referrer_host,json=referrerHost,proto3" json:"referrer_host,omitempty"`
+	UserAgent    string `protobuf:"bytes,9,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
+	Browser      string `protobuf:"bytes,10,opt,name=browser,proto3" json:"browser,omitempty"`
+	Os           string `protobuf:"bytes,11,opt,name=os,proto3" json:"os,omitempty"`
+	// "desktop" | "mobile" | "tablet" | "bot" | "other".
+	Device string `protobuf:"bytes,12,opt,name=device,proto3" json:"device,omitempty"`
+	// First Accept-Language tag (e.g. "en-US").
+	Lang          string `protobuf:"bytes,13,opt,name=lang,proto3" json:"lang,omitempty"`
+	IsBot         bool   `protobuf:"varint,14,opt,name=is_bot,json=isBot,proto3" json:"is_bot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClickEvent) Reset() {
+	*x = ClickEvent{}
+	mi := &file_urlo_v1_url_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClickEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClickEvent) ProtoMessage() {}
+
+func (x *ClickEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_urlo_v1_url_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClickEvent.ProtoReflect.Descriptor instead.
+func (*ClickEvent) Descriptor() ([]byte, []int) {
+	return file_urlo_v1_url_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ClickEvent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetTs() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Ts
+	}
+	return nil
+}
+
+func (x *ClickEvent) GetIpHash() string {
+	if x != nil {
+		return x.IpHash
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetCountry() string {
+	if x != nil {
+		return x.Country
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetReferrer() string {
+	if x != nil {
+		return x.Referrer
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetReferrerHost() string {
+	if x != nil {
+		return x.ReferrerHost
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetUserAgent() string {
+	if x != nil {
+		return x.UserAgent
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetBrowser() string {
+	if x != nil {
+		return x.Browser
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetLang() string {
+	if x != nil {
+		return x.Lang
+	}
+	return ""
+}
+
+func (x *ClickEvent) GetIsBot() bool {
+	if x != nil {
+		return x.IsBot
+	}
+	return false
+}
+
+type ListClicksRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Code  string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	// Page size, default 50, max 500.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Opaque cursor returned by previous response. Empty for first page.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListClicksRequest) Reset() {
+	*x = ListClicksRequest{}
+	mi := &file_urlo_v1_url_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListClicksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListClicksRequest) ProtoMessage() {}
+
+func (x *ListClicksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_urlo_v1_url_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListClicksRequest.ProtoReflect.Descriptor instead.
+func (*ListClicksRequest) Descriptor() ([]byte, []int) {
+	return file_urlo_v1_url_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListClicksRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *ListClicksRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListClicksRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListClicksResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Events []*ClickEvent          `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	// Cursor for the next page; empty when no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListClicksResponse) Reset() {
+	*x = ListClicksResponse{}
+	mi := &file_urlo_v1_url_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListClicksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListClicksResponse) ProtoMessage() {}
+
+func (x *ListClicksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_urlo_v1_url_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListClicksResponse.ProtoReflect.Descriptor instead.
+func (*ListClicksResponse) Descriptor() ([]byte, []int) {
+	return file_urlo_v1_url_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListClicksResponse) GetEvents() []*ClickEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ListClicksResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_urlo_v1_url_proto protoreflect.FileDescriptor
 
 const file_urlo_v1_url_proto_rawDesc = "" +
@@ -506,7 +776,33 @@ const file_urlo_v1_url_proto_rawDesc = "" +
 	"\x04link\x18\x01 \x01(\v2\x12.urlo.v1.ShortLinkR\x04link\"#\n" +
 	"\rDeleteRequest\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\"\x10\n" +
-	"\x0eDeleteResponseB2Z0github.com/kongken/urlo/pkg/proto/urlo/v1;urlov1b\x06proto3"
+	"\x0eDeleteResponse\"\xf0\x02\n" +
+	"\n" +
+	"ClickEvent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12*\n" +
+	"\x02ts\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x17\n" +
+	"\aip_hash\x18\x04 \x01(\tR\x06ipHash\x12\x18\n" +
+	"\acountry\x18\x05 \x01(\tR\acountry\x12\x12\n" +
+	"\x04city\x18\x06 \x01(\tR\x04city\x12\x1a\n" +
+	"\breferrer\x18\a \x01(\tR\breferrer\x12#\n" +
+	"\rreferrer_host\x18\b \x01(\tR\freferrerHost\x12\x1d\n" +
+	"\n" +
+	"user_agent\x18\t \x01(\tR\tuserAgent\x12\x18\n" +
+	"\abrowser\x18\n" +
+	" \x01(\tR\abrowser\x12\x0e\n" +
+	"\x02os\x18\v \x01(\tR\x02os\x12\x16\n" +
+	"\x06device\x18\f \x01(\tR\x06device\x12\x12\n" +
+	"\x04lang\x18\r \x01(\tR\x04lang\x12\x15\n" +
+	"\x06is_bot\x18\x0e \x01(\bR\x05isBot\"c\n" +
+	"\x11ListClicksRequest\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"i\n" +
+	"\x12ListClicksResponse\x12+\n" +
+	"\x06events\x18\x01 \x03(\v2\x13.urlo.v1.ClickEventR\x06events\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageTokenB2Z0github.com/kongken/urlo/pkg/proto/urlo/v1;urlov1b\x06proto3"
 
 var (
 	file_urlo_v1_url_proto_rawDescOnce sync.Once
@@ -520,7 +816,7 @@ func file_urlo_v1_url_proto_rawDescGZIP() []byte {
 	return file_urlo_v1_url_proto_rawDescData
 }
 
-var file_urlo_v1_url_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_urlo_v1_url_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_urlo_v1_url_proto_goTypes = []any{
 	(*ShortLink)(nil),             // 0: urlo.v1.ShortLink
 	(*ShortenRequest)(nil),        // 1: urlo.v1.ShortenRequest
@@ -531,19 +827,24 @@ var file_urlo_v1_url_proto_goTypes = []any{
 	(*GetStatsResponse)(nil),      // 6: urlo.v1.GetStatsResponse
 	(*DeleteRequest)(nil),         // 7: urlo.v1.DeleteRequest
 	(*DeleteResponse)(nil),        // 8: urlo.v1.DeleteResponse
-	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
+	(*ClickEvent)(nil),            // 9: urlo.v1.ClickEvent
+	(*ListClicksRequest)(nil),     // 10: urlo.v1.ListClicksRequest
+	(*ListClicksResponse)(nil),    // 11: urlo.v1.ListClicksResponse
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_urlo_v1_url_proto_depIdxs = []int32{
-	9, // 0: urlo.v1.ShortLink.created_at:type_name -> google.protobuf.Timestamp
-	9, // 1: urlo.v1.ShortLink.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 2: urlo.v1.ShortenResponse.link:type_name -> urlo.v1.ShortLink
-	0, // 3: urlo.v1.ResolveResponse.link:type_name -> urlo.v1.ShortLink
-	0, // 4: urlo.v1.GetStatsResponse.link:type_name -> urlo.v1.ShortLink
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	12, // 0: urlo.v1.ShortLink.created_at:type_name -> google.protobuf.Timestamp
+	12, // 1: urlo.v1.ShortLink.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: urlo.v1.ShortenResponse.link:type_name -> urlo.v1.ShortLink
+	0,  // 3: urlo.v1.ResolveResponse.link:type_name -> urlo.v1.ShortLink
+	0,  // 4: urlo.v1.GetStatsResponse.link:type_name -> urlo.v1.ShortLink
+	12, // 5: urlo.v1.ClickEvent.ts:type_name -> google.protobuf.Timestamp
+	9,  // 6: urlo.v1.ListClicksResponse.events:type_name -> urlo.v1.ClickEvent
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_urlo_v1_url_proto_init() }
@@ -557,7 +858,7 @@ func file_urlo_v1_url_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_urlo_v1_url_proto_rawDesc), len(file_urlo_v1_url_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -53,3 +53,41 @@ message DeleteRequest {
 }
 
 message DeleteResponse {}
+
+// ClickEvent is a single recorded redirect.
+message ClickEvent {
+  // Server-assigned event id (e.g. redis stream id "1714521600123-0").
+  string id = 1;
+  string code = 2;
+  google.protobuf.Timestamp ts = 3;
+  // Hashed client IP (sha256(ip+salt) hex, first 16 bytes). Empty if disabled.
+  string ip_hash = 4;
+  string country = 5;
+  string city = 6;
+  // Full Referer header value.
+  string referrer = 7;
+  // Hostname extracted from referrer (e.g. "google.com").
+  string referrer_host = 8;
+  string user_agent = 9;
+  string browser = 10;
+  string os = 11;
+  // "desktop" | "mobile" | "tablet" | "bot" | "other".
+  string device = 12;
+  // First Accept-Language tag (e.g. "en-US").
+  string lang = 13;
+  bool is_bot = 14;
+}
+
+message ListClicksRequest {
+  string code = 1;
+  // Page size, default 50, max 500.
+  int32 page_size = 2;
+  // Opaque cursor returned by previous response. Empty for first page.
+  string page_token = 3;
+}
+
+message ListClicksResponse {
+  repeated ClickEvent events = 1;
+  // Cursor for the next page; empty when no more pages.
+  string next_page_token = 2;
+}

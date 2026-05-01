@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/kongken/urlo/internal/auth"
+	"github.com/kongken/urlo/internal/clicks"
 	"github.com/kongken/urlo/internal/ratelimit"
 	"github.com/kongken/urlo/internal/url"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
@@ -27,6 +29,7 @@ import (
 //	POST   /api/v1/urls                -> Shorten (anonymous OK; tags owner if logged in)
 //	GET    /api/v1/urls/:code          -> Resolve
 //	GET    /api/v1/urls/:code/stats    -> GetStats (owner-checked if owned)
+//	GET    /api/v1/urls/:code/clicks   -> ListClicks (owner-checked if owned)
 //	DELETE /api/v1/urls/:code          -> Delete   (owner-checked if owned)
 //	GET    /:code                      -> 302 to the long URL
 func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
@@ -71,9 +74,10 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 
 	api.GET("/urls/:code", handleResolve(svc))
 	api.GET("/urls/:code/stats", handleGetStats(svc))
+	api.GET("/urls/:code/clicks", handleListClicks(svc))
 	api.DELETE("/urls/:code", handleDelete(svc))
 
-	r.GET("/:code", handleRedirect(svc))
+	r.GET("/:code", handleRedirect(svc, o.ipHashSalt))
 }
 
 // Option customises route registration.
@@ -86,6 +90,13 @@ type options struct {
 	cookieName     string
 	cookieSecure   bool
 	cookieTTL      time.Duration
+	ipHashSalt     string
+}
+
+// WithIPHashSalt sets the salt mixed into hashed client IPs in click
+// records. Empty disables IP hashing entirely.
+func WithIPHashSalt(salt string) Option {
+	return func(o *options) { o.ipHashSalt = salt }
 }
 
 // WithShortenLimiter applies a per-IP rate limiter to POST /api/v1/urls.
@@ -286,16 +297,72 @@ func handleDelete(svc *url.Service) gin.HandlerFunc {
 	}
 }
 
-func handleRedirect(svc *url.Service) gin.HandlerFunc {
+func handleRedirect(svc *url.Service, ipHashSalt string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		resp, err := svc.Resolve(c.Request.Context(), &urlov1.ResolveRequest{
-			Code: c.Param("code"),
+		code := c.Param("code")
+		resp, err := svc.Resolve(c.Request.Context(), &urlov1.ResolveRequest{Code: code})
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		recordClick(svc.Recorder(), c, code, ipHashSalt)
+		c.Redirect(http.StatusFound, resp.GetLink().GetLongUrl())
+	}
+}
+
+func recordClick(rec clicks.Recorder, c *gin.Context, code, salt string) {
+	if rec == nil {
+		return
+	}
+	if _, ok := rec.(clicks.Nop); ok {
+		return
+	}
+	ua := c.GetHeader("User-Agent")
+	ref := c.GetHeader("Referer")
+	browser, osName, device, isBot := clicks.ParseUA(ua)
+	evt := clicks.Event{
+		Code:         code,
+		Timestamp:    time.Now().UTC(),
+		IPHash:       clicks.HashIP(c.ClientIP(), salt),
+		Referrer:     ref,
+		ReferrerHost: clicks.ReferrerHost(ref),
+		UserAgent:    ua,
+		Browser:      browser,
+		OS:           osName,
+		Device:       device,
+		Lang:         clicks.FirstLang(c.GetHeader("Accept-Language")),
+		IsBot:        isBot,
+	}
+	// Detach from the request context so cancelation on response doesn't
+	// race the recorder enqueue.
+	rec.Record(context.Background(), evt)
+}
+
+func handleListClicks(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ownerID := ""
+		if u := auth.FromGin(c); u != nil {
+			ownerID = u.Sub
+		}
+		// Owner check — reuse GetStatsAs which performs ownership verification.
+		if _, err := svc.GetStatsAs(c.Request.Context(), c.Param("code"), ownerID); err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		size, _ := strconv.Atoi(c.Query("page_size"))
+		resp, err := svc.ListClicks(c.Request.Context(), &urlov1.ListClicksRequest{
+			Code:      c.Param("code"),
+			PageSize:  int32(size),
+			PageToken: c.Query("page_token"),
 		})
 		if err != nil {
 			writeStatusError(c, err)
 			return
 		}
-		c.Redirect(http.StatusFound, resp.GetLink().GetLongUrl())
+		c.JSON(http.StatusOK, gin.H{
+			"events":          resp.GetEvents(),
+			"next_page_token": resp.GetNextPageToken(),
+		})
 	}
 }
 
