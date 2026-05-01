@@ -72,6 +72,22 @@ func (f *fakeS3) DeleteObject(_ context.Context, in *awss3.DeleteObjectInput, _ 
 	return &awss3.DeleteObjectOutput{}, nil
 }
 
+func (f *fakeS3) ListObjectsV2(_ context.Context, in *awss3.ListObjectsV2Input, _ ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	bucket := aws.ToString(in.Bucket)
+	prefix := aws.ToString(in.Prefix)
+	full := bucket + "/" + prefix
+	var contents []types.Object
+	for k := range f.objects {
+		if strings.HasPrefix(k, full) {
+			key := strings.TrimPrefix(k, bucket+"/")
+			contents = append(contents, types.Object{Key: aws.String(key)})
+		}
+	}
+	return &awss3.ListObjectsV2Output{Contents: contents}, nil
+}
+
 func (f *fakeS3) keys() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

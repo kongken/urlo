@@ -33,6 +33,7 @@ type API interface {
 	GetObject(ctx context.Context, in *awss3.GetObjectInput, opts ...func(*awss3.Options)) (*awss3.GetObjectOutput, error)
 	HeadObject(ctx context.Context, in *awss3.HeadObjectInput, opts ...func(*awss3.Options)) (*awss3.HeadObjectOutput, error)
 	DeleteObject(ctx context.Context, in *awss3.DeleteObjectInput, opts ...func(*awss3.Options)) (*awss3.DeleteObjectOutput, error)
+	ListObjectsV2(ctx context.Context, in *awss3.ListObjectsV2Input, opts ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error)
 }
 
 // Store implements url.Store on top of an S3 bucket.
@@ -73,6 +74,16 @@ func (s *Store) key(code string) string {
 	return s.prefix + "/" + code + ".json"
 }
 
+// ownerKey returns the index pointer object key for (ownerID, code).
+// The object body is empty; presence is the index.
+func (s *Store) ownerKey(ownerID, code string) string {
+	return s.prefix + "/owners/" + ownerID + "/" + code
+}
+
+func (s *Store) ownerPrefix(ownerID string) string {
+	return s.prefix + "/owners/" + ownerID + "/"
+}
+
 func (s *Store) Create(ctx context.Context, r *url.Record) error {
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -90,6 +101,14 @@ func (s *Store) Create(ctx context.Context, r *url.Record) error {
 			return url.ErrAlreadyExists
 		}
 		return err
+	}
+	if r.OwnerID != "" {
+		// Best-effort owner index pointer.
+		_, _ = s.client.PutObject(ctx, &awss3.PutObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(s.ownerKey(r.OwnerID, r.Code)),
+			Body:   bytes.NewReader(nil),
+		})
 	}
 	return nil
 }
@@ -131,11 +150,25 @@ func (s *Store) Delete(ctx context.Context, code string) error {
 		}
 		return err
 	}
+	// Read existing record to find owner pointer (best-effort).
+	var ownerID string
+	if r, gerr := s.Get(ctx, code); gerr == nil && r != nil {
+		ownerID = r.OwnerID
+	}
 	_, err = s.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.key(code)),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if ownerID != "" {
+		_, _ = s.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(s.ownerKey(ownerID, code)),
+		})
+	}
+	return nil
 }
 
 func (s *Store) IncrVisit(ctx context.Context, code string) (*url.Record, error) {
@@ -159,6 +192,49 @@ func (s *Store) IncrVisit(ctx context.Context, code string) (*url.Record, error)
 		return nil, err
 	}
 	return r, nil
+}
+
+func (s *Store) ListByOwner(ctx context.Context, ownerID string) ([]*url.Record, error) {
+	if ownerID == "" {
+		return nil, nil
+	}
+	prefix := s.ownerPrefix(ownerID)
+	var (
+		out   []*url.Record
+		token *string
+	)
+	for {
+		page, err := s.client.ListObjectsV2(ctx, &awss3.ListObjectsV2Input{
+			Bucket:            aws.String(s.bucket),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
+			code := strings.TrimPrefix(*obj.Key, prefix)
+			if code == "" {
+				continue
+			}
+			r, err := s.Get(ctx, code)
+			if err != nil {
+				if errors.Is(err, url.ErrNotFound) {
+					continue
+				}
+				return nil, err
+			}
+			out = append(out, r)
+		}
+		if page.IsTruncated == nil || !*page.IsTruncated {
+			break
+		}
+		token = page.NextContinuationToken
+	}
+	return out, nil
 }
 
 func isNotFound(err error) bool {

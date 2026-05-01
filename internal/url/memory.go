@@ -57,3 +57,19 @@ func (m *MemoryStore) IncrVisit(_ context.Context, code string) (*Record, error)
 	m.records[code] = r
 	return &r, nil
 }
+
+func (m *MemoryStore) ListByOwner(_ context.Context, ownerID string) ([]*Record, error) {
+	if ownerID == "" {
+		return nil, nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*Record, 0)
+	for _, r := range m.records {
+		if r.OwnerID == ownerID {
+			rec := r
+			out = append(out, &rec)
+		}
+	}
+	return out, nil
+}

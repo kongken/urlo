@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router-dom"
 import { Link2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { UserMenu } from "@/components/UserMenu"
 
 const navItems = [
   { to: "/", label: "Home", end: true },
@@ -39,6 +40,9 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
+          <div className="ml-auto">
+            <UserMenu />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10">

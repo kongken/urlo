@@ -7,6 +7,28 @@ type ServiceConfig struct {
 	BaseURL     string          `yaml:"base_url"`
 	Storage     StorageConfig   `yaml:"storage"`
 	RateLimit   RateLimitConfig `yaml:"rate_limit"`
+	Auth        AuthConfig      `yaml:"auth"`
+}
+
+// AuthConfig configures Google login + session JWT.
+//
+// When Google.ClientID is empty, auth is disabled: the /api/v1/auth/*
+// routes return 503, the frontend sees no logged-in user, and all links
+// remain anonymous.
+type AuthConfig struct {
+	Google  GoogleAuthConfig `yaml:"google"`
+	Session SessionConfig    `yaml:"session"`
+}
+
+type GoogleAuthConfig struct {
+	ClientID string `yaml:"client_id"`
+}
+
+type SessionConfig struct {
+	JWTSecret  string `yaml:"jwt_secret"`
+	CookieName string `yaml:"cookie_name"`
+	TTLHours   int    `yaml:"ttl_hours"`
+	Secure     bool   `yaml:"secure"`
 }
 
 // RateLimitConfig configures per-IP rate limiting on URL creation.

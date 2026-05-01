@@ -21,30 +21,56 @@ import {
   type ShortLink,
 } from "@/lib/api"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/AuthContext"
 
 function isExpired(link: ShortLink) {
   return Boolean(link.expires_at && new Date(link.expires_at) < new Date())
 }
 
 export default function Dashboard() {
+  const { user, loading: authLoading } = useAuth()
   const [links, setLinks] = useState<ShortLink[]>([])
   const [filter, setFilter] = useState("")
 
+  const loadLinks = async () => {
+    if (user) {
+      try {
+        const list = await api.listMine()
+        setLinks(list)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to load links")
+      }
+    } else {
+      setLinks(loadLocalLinks())
+    }
+  }
+
   useEffect(() => {
-    setLinks(loadLocalLinks())
-  }, [])
+    if (authLoading) return
+    void loadLinks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user?.sub])
 
   async function refresh(code: string) {
     try {
       const link = await api.stats(code)
-      upsertLocalLink(link)
-      setLinks(loadLocalLinks())
+      if (user) {
+        setLinks((prev) => prev.map((l) => (l.code === code ? link : l)))
+      } else {
+        upsertLocalLink(link)
+        setLinks(loadLocalLinks())
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Refresh failed")
     }
   }
 
   async function refreshAll() {
+    if (user) {
+      await loadLinks()
+      toast.success("Stats refreshed")
+      return
+    }
     const current = loadLocalLinks()
     const updated = await Promise.all(
       current.map(async (l) => {
@@ -68,8 +94,12 @@ export default function Dashboard() {
       toast.error(err instanceof Error ? err.message : "Delete failed")
       return
     }
-    removeLocalLink(code)
-    setLinks(loadLocalLinks())
+    if (user) {
+      setLinks((prev) => prev.filter((l) => l.code !== code))
+    } else {
+      removeLocalLink(code)
+      setLinks(loadLocalLinks())
+    }
     toast.success("Link deleted")
   }
 
@@ -86,7 +116,9 @@ export default function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold">My Links</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Stored locally in this browser. Stats fetched from the server.
+            {user
+              ? `Signed in as ${user.email || user.name || user.sub}.`
+              : "Stored locally in this browser. Sign in to manage links across devices."}
           </p>
         </div>
         <Button onClick={refreshAll} variant="outline">
