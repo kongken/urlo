@@ -187,9 +187,9 @@ export default function Analytics() {
   if (!code) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold">Analytics</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Analytics</h1>
         <p className="text-muted-foreground">Pick a link to view its stats.</p>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           {pickerLinks.map((l) => (
             <Link
               key={l.code}
@@ -213,7 +213,7 @@ export default function Analytics() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link
             to="/dashboard"
@@ -222,19 +222,19 @@ export default function Analytics() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <h1 className="text-3xl font-bold">Link Analytics</h1>
-            <p className="text-muted-foreground text-sm font-mono mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold">Link Analytics</h1>
+            <p className="text-muted-foreground text-sm font-mono mt-1 break-all">
               /{code}
             </p>
           </div>
         </div>
-        <Button variant="outline" disabled={loading} onClick={refresh}>
+        <Button variant="outline" disabled={loading} onClick={refresh} className="self-start sm:self-auto">
           <RefreshCw className="h-4 w-4 mr-2" /> Refresh
         </Button>
       </div>
 
       {link && (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           <Stat label="Total Clicks" value={link.visit_count} />
           <Stat
             label="Unique Visitors"
@@ -336,36 +336,38 @@ export default function Analytics() {
                   collecting data.
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Referrer</TableHead>
-                      <TableHead>Browser</TableHead>
-                      <TableHead>OS</TableHead>
-                      <TableHead>Device</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {events.slice(0, 50).map((e) => (
-                      <TableRow key={e.id}>
-                        <TableCell className="font-mono text-xs">
-                          {new Date(e.ts).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="max-w-[16rem] truncate">
-                          {e.referrer_host || (
-                            <span className="text-muted-foreground">
-                              (direct)
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>{e.browser || "—"}</TableCell>
-                        <TableCell>{e.os || "—"}</TableCell>
-                        <TableCell>{e.device || "—"}</TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Referrer</TableHead>
+                        <TableHead className="hidden sm:table-cell">Browser</TableHead>
+                        <TableHead className="hidden sm:table-cell">OS</TableHead>
+                        <TableHead className="hidden md:table-cell">Device</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {events.slice(0, 50).map((e) => (
+                        <TableRow key={e.id}>
+                          <TableCell className="font-mono text-xs whitespace-nowrap">
+                            {new Date(e.ts).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="max-w-[10rem] sm:max-w-[16rem] truncate">
+                            {e.referrer_host || (
+                              <span className="text-muted-foreground">
+                                (direct)
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">{e.browser || "—"}</TableCell>
+                          <TableCell className="hidden sm:table-cell">{e.os || "—"}</TableCell>
+                          <TableCell className="hidden md:table-cell">{e.device || "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
