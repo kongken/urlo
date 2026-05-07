@@ -25,7 +25,7 @@ export function QrCard({ value, filename = "qrcode", size = 160 }: QrCardProps) 
   }
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
       <div
         ref={wrapperRef}
         className="rounded-lg bg-white p-2 border shadow-sm shrink-0"

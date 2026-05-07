@@ -72,35 +72,35 @@ export default function Landing() {
   }
 
   return (
-    <div className="space-y-16">
-      <section className="text-center space-y-6 pt-10">
-        <h1 className="text-5xl font-bold tracking-tight md:text-6xl">
+    <div className="space-y-10 md:space-y-16">
+      <section className="text-center space-y-6 pt-6 md:pt-10">
+        <h1 className="text-3xl font-bold tracking-tight sm:text-5xl md:text-6xl">
           Precision Link Management
         </h1>
-        <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+        <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto px-2">
           Shorten, share, and track URLs with confidence. Built fast in Go,
           designed for clarity.
         </p>
-        <form onSubmit={onSubmit} className="mx-auto max-w-2xl space-y-3">
-          <div className="flex gap-2 rounded-full bg-card p-1.5 shadow-sm border">
+        <form onSubmit={onSubmit} className="mx-auto max-w-2xl space-y-3 px-1">
+          <div className="flex flex-col sm:flex-row gap-2 sm:rounded-full sm:bg-card sm:p-1.5 sm:shadow-sm sm:border">
             <Input
               type="url"
               required
               value={longUrl}
               onChange={(e) => setLongUrl(e.target.value)}
               placeholder="Paste a long URL here…"
-              className="border-0 bg-transparent shadow-none focus-visible:ring-0 text-base px-4"
+              className="sm:border-0 sm:bg-transparent sm:shadow-none sm:focus-visible:ring-0 text-base px-4"
             />
-            <Button type="submit" disabled={loading} size="lg" className="rounded-full px-6">
+            <Button type="submit" disabled={loading} size="lg" className="rounded-full px-6 w-full sm:w-auto">
               {loading ? "Shortening…" : "Shorten URL"}
             </Button>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2">
             <Input
               value={customCode}
               onChange={(e) => setCustomCode(e.target.value)}
               placeholder="Optional custom code (e.g. launch)"
-              className="max-w-xs text-sm"
+              className="w-full sm:max-w-xs text-sm"
             />
             <div
               role="radiogroup"
@@ -140,16 +140,16 @@ export default function Landing() {
               <CardTitle className="text-base">Your short link</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <a
                   href={result.short_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-mono text-primary hover:underline truncate"
+                  className="font-mono text-primary hover:underline truncate text-sm sm:text-base"
                 >
                   {result.short_url}
                 </a>
-                <Button size="icon" variant="ghost" onClick={() => copy(result.short_url)}>
+                <Button size="icon" variant="ghost" className="shrink-0" onClick={() => copy(result.short_url)}>
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>

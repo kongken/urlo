@@ -120,16 +120,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">My Links</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">My Links</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {user
               ? `Signed in as ${user.email || user.name || user.sub}.`
               : "Stored locally in this browser. Sign in to manage links across devices."}
           </p>
         </div>
-        <Button onClick={refreshAll} variant="outline">
+        <Button onClick={refreshAll} variant="outline" className="self-start sm:self-auto">
           <RefreshCw className="h-4 w-4 mr-2" /> Refresh stats
         </Button>
       </div>
@@ -153,95 +153,97 @@ export default function Dashboard() {
             </Link>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Short URL</TableHead>
-                <TableHead>Destination</TableHead>
-                <TableHead className="text-right">Clicks</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[1%]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((link) => {
-                const expired = isExpired(link)
-                return (
-                  <TableRow key={link.code} className={expired ? "opacity-60" : ""}>
-                    <TableCell className="font-mono">
-                      <a
-                        href={link.short_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        {link.short_url.replace(/^https?:\/\//, "")}
-                      </a>
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate text-muted-foreground">
-                      {link.long_url}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {link.visit_count}
-                    </TableCell>
-                    <TableCell>
-                      {expired ? (
-                        <Badge variant="outline">Expired</Badge>
-                      ) : (
-                        <Badge>Active</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => {
-                            navigator.clipboard.writeText(link.short_url)
-                            toast.success("Copied")
-                          }}
-                          title="Copy"
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Short URL</TableHead>
+                  <TableHead className="hidden sm:table-cell">Destination</TableHead>
+                  <TableHead className="text-right">Clicks</TableHead>
+                  <TableHead className="hidden sm:table-cell">Status</TableHead>
+                  <TableHead className="w-[1%]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((link) => {
+                  const expired = isExpired(link)
+                  return (
+                    <TableRow key={link.code} className={expired ? "opacity-60" : ""}>
+                      <TableCell className="font-mono text-xs sm:text-sm">
+                        <a
+                          href={link.short_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline"
                         >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setQrLink(link)}
-                          title="QR code"
-                        >
-                          <QrCode className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => refresh(link.code)}
-                          title="Refresh stats"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
-                        <Link
-                          to={`/analytics/${link.code}`}
-                          title="Analytics"
-                          className={buttonVariants({ variant: "ghost", size: "icon" })}
-                        >
-                          <BarChart3 className="h-4 w-4" />
-                        </Link>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => onDelete(link.code)}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                          {link.short_url.replace(/^https?:\/\//, "")}
+                        </a>
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate text-muted-foreground hidden sm:table-cell">
+                        {link.long_url}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {link.visit_count}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {expired ? (
+                          <Badge variant="outline">Expired</Badge>
+                        ) : (
+                          <Badge>Active</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              navigator.clipboard.writeText(link.short_url)
+                              toast.success("Copied")
+                            }}
+                            title="Copy"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setQrLink(link)}
+                            title="QR code"
+                          >
+                            <QrCode className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => refresh(link.code)}
+                            title="Refresh stats"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
+                          <Link
+                            to={`/analytics/${link.code}`}
+                            title="Analytics"
+                            className={buttonVariants({ variant: "ghost", size: "icon" })}
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                          </Link>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => onDelete(link.code)}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </Card>
 
