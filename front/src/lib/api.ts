@@ -77,6 +77,19 @@ export interface ListClicksResponse {
   next_page_token: string
 }
 
+export interface AnalyticsItem {
+  key: string
+  count: number
+}
+
+export interface AnalyticsResponse {
+  code: string
+  stats_type: "day" | "country" | "referer"
+  from?: string
+  to?: string
+  items: AnalyticsItem[]
+}
+
 export const api = {
   shorten(body: ShortenRequest) {
     return request<ShortLink>("/api/v1/urls", {
@@ -89,6 +102,9 @@ export const api = {
   },
   resolve(code: string) {
     return request<ShortLink>(`/api/v1/urls/${encodeURIComponent(code)}`)
+  },
+  lookup(code: string) {
+    return request<ShortLink>(`/api/v1/urls/${encodeURIComponent(code)}/lookup`)
   },
   delete(code: string) {
     return request<void>(`/api/v1/urls/${encodeURIComponent(code)}`, {
@@ -109,6 +125,50 @@ export const api = {
       events: r.events ?? [],
       next_page_token: r.next_page_token ?? "",
     }))
+  },
+  analytics(
+    code: string,
+    opts: { statsType: "day" | "country" | "referer"; from?: string; to?: string; limit?: number },
+  ) {
+    const params = new URLSearchParams()
+    params.set("stats_type", opts.statsType)
+    if (opts.from) params.set("from", opts.from)
+    if (opts.to) params.set("to", opts.to)
+    if (opts.limit) params.set("limit", String(opts.limit))
+    return request<AnalyticsResponse>(
+      `/api/v1/urls/${encodeURIComponent(code)}/analytics?${params.toString()}`,
+    ).then((r) => ({ ...r, items: r.items ?? [] }))
+  },
+  update(
+    code: string,
+    body: {
+      long_url?: string
+      ttl_seconds?: number
+    },
+  ) {
+    return request<ShortLink>(`/api/v1/urls/${encodeURIComponent(code)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    })
+  },
+  setStatus(code: string, body: { disabled: boolean; reason?: string }) {
+    return request<{ code: string; disabled: boolean; reason?: string }>(
+      `/api/v1/urls/${encodeURIComponent(code)}/status`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    )
+  },
+  getStatus(code: string) {
+    return request<{ code: string; disabled: boolean; reason?: string }>(
+      `/api/v1/urls/${encodeURIComponent(code)}/status`,
+    )
+  },
+  checkAvailability(code: string) {
+    return request<{ code: string; available: boolean }>(
+      `/api/v1/urls/availability?code=${encodeURIComponent(code)}`,
+    )
   },
   // Auth
   loginWithGoogle(idToken: string) {

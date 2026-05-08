@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { ArrowLeft, RefreshCw } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
 import {
   api,
   loadLocalLinks,
+  type AnalyticsItem,
   type ClickEvent,
   type ShortLink,
 } from "@/lib/api"
@@ -38,7 +39,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   )
 }
 
-function topN(
+function topNFromEvents(
   events: ClickEvent[],
   pick: (e: ClickEvent) => string,
   n = 5,
@@ -108,6 +109,11 @@ export default function Analytics() {
   const [pickerLinks, setPickerLinks] = useState<ShortLink[]>([])
   const [loading, setLoading] = useState(false)
   const [clicksUnsupported, setClicksUnsupported] = useState(false)
+  const [referrers, setReferrers] = useState<AnalyticsItem[]>([])
+  const [countries, setCountries] = useState<AnalyticsItem[]>([])
+  const [days, setDays] = useState<AnalyticsItem[]>([])
+  const [linkDisabled, setLinkDisabled] = useState(false)
+  const [linkDisabledReason, setLinkDisabledReason] = useState("")
 
   useEffect(() => {
     if (code) return
@@ -135,9 +141,10 @@ export default function Analytics() {
     setLoading(true)
     setClicksUnsupported(false)
     try {
-      const [s, c] = await Promise.allSettled([
+      const [s, c, st] = await Promise.allSettled([
         api.stats(code),
         api.listClicks(code, { pageSize: FETCH_PAGE_SIZE }),
+        api.getStatus(code),
       ])
       if (s.status === "fulfilled") setLink(s.value)
       else
@@ -158,6 +165,21 @@ export default function Analytics() {
           setEvents([])
         }
       }
+      if (st.status === "fulfilled") {
+        setLinkDisabled(st.value.disabled)
+        setLinkDisabledReason(st.value.reason || "")
+      } else {
+        setLinkDisabled(false)
+        setLinkDisabledReason("")
+      }
+      const [aRef, aCountry, aDay] = await Promise.allSettled([
+        api.analytics(code, { statsType: "referer", limit: 5 }),
+        api.analytics(code, { statsType: "country", limit: 5 }),
+        api.analytics(code, { statsType: "day", limit: 14 }),
+      ])
+      if (aRef.status === "fulfilled") setReferrers(aRef.value.items)
+      if (aCountry.status === "fulfilled") setCountries(aCountry.value.items)
+      if (aDay.status === "fulfilled") setDays(aDay.value.items)
     } finally {
       setLoading(false)
     }
@@ -168,21 +190,12 @@ export default function Analytics() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code])
 
-  const aggregates = useMemo(() => {
-    const total = events.length
-    const uniqueVisitors = new Set(
-      events.map((e) => e.ip_hash).filter(Boolean),
-    ).size
-    return {
-      total,
-      uniqueVisitors,
-      referrers: topN(events, (e) => e.referrer_host, 5, "(direct)"),
-      countries: topN(events, (e) => e.country, 5, "(unknown)"),
-      devices: topN(events, (e) => e.device, 5),
-      browsers: topN(events, (e) => e.browser, 5),
-      os: topN(events, (e) => e.os, 5),
-    }
-  }, [events])
+  const total = events.length
+  const uniqueVisitors = new Set(
+    events.map((e) => e.ip_hash).filter(Boolean),
+  ).size
+  const devices = topNFromEvents(events, (e) => e.device, 5)
+  const browsers = topNFromEvents(events, (e) => e.browser, 5)
 
   if (!code) {
     return (
@@ -238,7 +251,7 @@ export default function Analytics() {
           <Stat label="Total Clicks" value={link.visit_count} />
           <Stat
             label="Unique Visitors"
-            value={aggregates.uniqueVisitors || "—"}
+            value={uniqueVisitors || "—"}
           />
           <Stat
             label="Created"
@@ -261,18 +274,28 @@ export default function Analytics() {
             <CardTitle>Destination</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
+            {linkDisabled && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                This link is currently disabled and cannot be opened via short URL.
+                {linkDisabledReason ? ` Reason: ${linkDisabledReason}.` : ""}
+              </div>
+            )}
             <div>
               <div className="text-xs uppercase text-muted-foreground tracking-wider mb-1">
                 Short URL
               </div>
-              <a
-                href={link.short_url}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-primary hover:underline"
-              >
-                {link.short_url}
-              </a>
+              {linkDisabled ? (
+                <span className="font-mono text-muted-foreground">{link.short_url}</span>
+              ) : (
+                <a
+                  href={link.short_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-primary hover:underline"
+                >
+                  {link.short_url}
+                </a>
+              )}
             </div>
             <div>
               <div className="text-xs uppercase text-muted-foreground tracking-wider mb-1">
@@ -304,24 +327,29 @@ export default function Analytics() {
           <div className="grid gap-4 md:grid-cols-2">
             <Breakdown
               title="Top Referrers"
-              rows={aggregates.referrers}
-              total={aggregates.total}
+              rows={referrers.map((i) => ({ label: i.key, count: i.count }))}
+              total={total}
             />
             <Breakdown
               title="Locations"
-              rows={aggregates.countries}
-              total={aggregates.total}
+              rows={countries.map((i) => ({ label: i.key, count: i.count }))}
+              total={total}
               empty="GeoIP not configured on the server."
             />
             <Breakdown
-              title="Devices"
-              rows={aggregates.devices}
-              total={aggregates.total}
+              title="Daily Trend"
+              rows={days.map((i) => ({ label: i.key, count: i.count }))}
+              total={Math.max(1, days.reduce((acc, i) => acc + i.count, 0))}
             />
             <Breakdown
               title="Browsers"
-              rows={aggregates.browsers}
-              total={aggregates.total}
+              rows={browsers}
+              total={total}
+            />
+            <Breakdown
+              title="Devices"
+              rows={devices}
+              total={total}
             />
           </div>
 

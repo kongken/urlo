@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { BarChart3, Copy, QrCode, RefreshCw, Trash2, Search } from "lucide-react"
+import { BarChart3, Copy, QrCode, RefreshCw, Trash2, Search, Pencil, Ban, CheckCircle2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
@@ -23,6 +23,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -39,17 +41,47 @@ export default function Dashboard() {
   const [links, setLinks] = useState<ShortLink[]>([])
   const [filter, setFilter] = useState("")
   const [qrLink, setQrLink] = useState<ShortLink | null>(null)
+  const [disabledMap, setDisabledMap] = useState<Record<string, boolean>>({})
+  const [editLink, setEditLink] = useState<ShortLink | null>(null)
+  const [editURL, setEditURL] = useState("")
+  const [statusLink, setStatusLink] = useState<ShortLink | null>(null)
+  const [statusReason, setStatusReason] = useState("")
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [savingStatus, setSavingStatus] = useState(false)
 
   const loadLinks = async () => {
     if (user) {
       try {
         const list = await api.listMine()
         setLinks(list)
+        const statusEntries = await Promise.all(
+          list.map(async (l) => {
+            try {
+              const s = await api.getStatus(l.code)
+              return [l.code, s.disabled] as const
+            } catch {
+              return [l.code, false] as const
+            }
+          }),
+        )
+        setDisabledMap(Object.fromEntries(statusEntries))
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to load links")
       }
     } else {
-      setLinks(loadLocalLinks())
+      const local = loadLocalLinks()
+      setLinks(local)
+      const statusEntries = await Promise.all(
+        local.map(async (l) => {
+          try {
+            const s = await api.getStatus(l.code)
+            return [l.code, s.disabled] as const
+          } catch {
+            return [l.code, false] as const
+          }
+        }),
+      )
+      setDisabledMap(Object.fromEntries(statusEntries))
     }
   }
 
@@ -62,6 +94,8 @@ export default function Dashboard() {
   async function refresh(code: string) {
     try {
       const link = await api.stats(code)
+      const status = await api.getStatus(code)
+      setDisabledMap((prev) => ({ ...prev, [code]: status.disabled }))
       if (user) {
         setLinks((prev) => prev.map((l) => (l.code === code ? link : l)))
       } else {
@@ -109,6 +143,51 @@ export default function Dashboard() {
       setLinks(loadLocalLinks())
     }
     toast.success("Link deleted")
+  }
+
+  async function onEditSubmit() {
+    if (!editLink) return
+    const next = editURL.trim()
+    if (!next || next === editLink.long_url) {
+      setEditLink(null)
+      return
+    }
+    setSavingEdit(true)
+    try {
+      const updated = await api.update(editLink.code, { long_url: next })
+      if (user) {
+        setLinks((prev) => prev.map((l) => (l.code === editLink.code ? updated : l)))
+      } else {
+        upsertLocalLink(updated)
+        setLinks(loadLocalLinks())
+      }
+      setEditLink(null)
+      toast.success("Link updated")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Update failed")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function onStatusSubmit() {
+    if (!statusLink) return
+    const currentlyDisabled = !!disabledMap[statusLink.code]
+    setSavingStatus(true)
+    try {
+      const res = await api.setStatus(statusLink.code, {
+        disabled: !currentlyDisabled,
+        reason: statusReason.trim() || undefined,
+      })
+      setDisabledMap((prev) => ({ ...prev, [statusLink.code]: res.disabled }))
+      setStatusLink(null)
+      setStatusReason("")
+      toast.success(res.disabled ? "Link disabled" : "Link enabled")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Status update failed")
+    } finally {
+      setSavingStatus(false)
+    }
   }
 
   const filtered = links.filter(
@@ -167,8 +246,9 @@ export default function Dashboard() {
               <TableBody>
                 {filtered.map((link) => {
                   const expired = isExpired(link)
+                  const disabled = !!disabledMap[link.code]
                   return (
-                    <TableRow key={link.code} className={expired ? "opacity-60" : ""}>
+                    <TableRow key={link.code} className={expired || disabled ? "opacity-60" : ""}>
                       <TableCell className="font-mono text-xs sm:text-sm">
                         <a
                           href={link.short_url}
@@ -188,6 +268,8 @@ export default function Dashboard() {
                       <TableCell className="hidden sm:table-cell">
                         {expired ? (
                           <Badge variant="outline">Expired</Badge>
+                        ) : disabled ? (
+                          <Badge variant="secondary">Disabled</Badge>
                         ) : (
                           <Badge>Active</Badge>
                         )}
@@ -231,6 +313,28 @@ export default function Dashboard() {
                           <Button
                             size="icon"
                             variant="ghost"
+                            onClick={() => {
+                              setEditLink(link)
+                              setEditURL(link.long_url)
+                            }}
+                            title="Edit destination"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              setStatusLink(link)
+                              setStatusReason("")
+                            }}
+                            title={disabled ? "Enable" : "Disable"}
+                          >
+                            {disabled ? <CheckCircle2 className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             onClick={() => onDelete(link.code)}
                             title="Delete"
                           >
@@ -263,6 +367,67 @@ export default function Dashboard() {
               />
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editLink} onOpenChange={(open) => !open && setEditLink(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit destination</DialogTitle>
+            <DialogDescription className="font-mono text-xs">/{editLink?.code}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm text-muted-foreground" htmlFor="edit-destination">
+              Long URL
+            </label>
+            <Input
+              id="edit-destination"
+              type="url"
+              value={editURL}
+              onChange={(e) => setEditURL(e.target.value)}
+              placeholder="https://example.com/new-target"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditLink(null)} disabled={savingEdit}>
+              Cancel
+            </Button>
+            <Button onClick={onEditSubmit} disabled={savingEdit}>
+              {savingEdit ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!statusLink} onOpenChange={(open) => !open && setStatusLink(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{statusLink && disabledMap[statusLink.code] ? "Enable link" : "Disable link"}</DialogTitle>
+            <DialogDescription className="font-mono text-xs">/{statusLink?.code}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm text-muted-foreground" htmlFor="status-reason">
+              Reason (optional)
+            </label>
+            <Input
+              id="status-reason"
+              value={statusReason}
+              onChange={(e) => setStatusReason(e.target.value)}
+              placeholder="abuse / maintenance / etc."
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusLink(null)} disabled={savingStatus}>
+              Cancel
+            </Button>
+            <Button onClick={onStatusSubmit} disabled={savingStatus}>
+              {savingStatus
+                ? "Saving..."
+                : statusLink && disabledMap[statusLink.code]
+                  ? "Enable"
+                  : "Disable"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

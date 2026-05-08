@@ -164,10 +164,10 @@ func TestShortenCodeLengthRequest(t *testing.T) {
 
 func TestCodeLengthConfigurable(t *testing.T) {
 	cases := []struct {
-		name     string
-		opt      int
-		setLen   int
-		wantLen  int
+		name    string
+		opt     int
+		setLen  int
+		wantLen int
 	}{
 		{"default zero", 0, 0, DefaultCodeLen},
 		{"below min raised", 3, 0, MinCodeLen},
@@ -192,5 +192,53 @@ func TestCodeLengthConfigurable(t *testing.T) {
 				t.Fatalf("generated code length = %d, want %d", got, tc.wantLen)
 			}
 		})
+	}
+}
+
+func TestAvailabilityUpdateAndDisable(t *testing.T) {
+	s := NewService(Options{})
+	ctx := context.Background()
+
+	available, err := s.Availability(ctx, "hello")
+	if err != nil {
+		t.Fatalf("Availability: %v", err)
+	}
+	if !available {
+		t.Fatalf("expected hello to be available")
+	}
+
+	resp, err := s.Shorten(ctx, &urlov1.ShortenRequest{
+		LongUrl:    "https://example.com",
+		CustomCode: "hello",
+	})
+	if err != nil {
+		t.Fatalf("Shorten: %v", err)
+	}
+	code := resp.GetLink().GetCode()
+
+	available, err = s.Availability(ctx, code)
+	if err != nil {
+		t.Fatalf("Availability: %v", err)
+	}
+	if available {
+		t.Fatalf("expected %s to be unavailable", code)
+	}
+
+	newURL := "https://example.com/next"
+	updated, err := s.UpdateAs(ctx, code, "", UpdatePatch{
+		LongURL: &newURL,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAs: %v", err)
+	}
+	if updated.GetLongUrl() != newURL {
+		t.Fatalf("long_url=%q", updated.GetLongUrl())
+	}
+
+	if _, err := s.SetDisabledAs(ctx, code, "", true, "abuse"); err != nil {
+		t.Fatalf("SetDisabledAs: %v", err)
+	}
+	if _, err := s.Resolve(ctx, &urlov1.ResolveRequest{Code: code}); status.Code(err) != codes.NotFound {
+		t.Fatalf("Resolve disabled got %v", err)
 	}
 }

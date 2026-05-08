@@ -29,6 +29,7 @@ type shortLinkDTO struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	VisitCount int64      `json:"visit_count"`
+	Disabled   bool       `json:"disabled,omitempty"`
 }
 
 func toShortLinkDTO(l *urlov1.ShortLink) shortLinkDTO {
@@ -64,6 +65,19 @@ type clickEventDTO struct {
 	Device       string    `json:"device,omitempty"`
 	Lang         string    `json:"lang,omitempty"`
 	IsBot        bool      `json:"is_bot,omitempty"`
+}
+
+type analyticsItemDTO struct {
+	Key   string `json:"key"`
+	Count int64  `json:"count"`
+}
+
+type analyticsResponseDTO struct {
+	Code      string             `json:"code"`
+	StatsType string             `json:"stats_type"`
+	From      string             `json:"from,omitempty"`
+	To        string             `json:"to,omitempty"`
+	Items     []analyticsItemDTO `json:"items"`
 }
 
 func toClickEventDTO(e *urlov1.ClickEvent) clickEventDTO {
@@ -143,9 +157,15 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 	api.POST("/urls", shorten...)
 
 	api.GET("/urls/:code", handleResolve(svc))
+	api.GET("/urls/:code/lookup", handleLookup(svc))
 	api.GET("/urls/:code/stats", handleGetStats(svc))
+	api.GET("/urls/:code/analytics", handleAnalytics(svc))
 	api.GET("/urls/:code/clicks", handleListClicks(svc))
+	api.GET("/urls/:code/status", handleGetStatus(svc))
+	api.PATCH("/urls/:code", handleUpdate(svc))
+	api.PATCH("/urls/:code/status", handleStatus(svc))
 	api.DELETE("/urls/:code", handleDelete(svc))
+	api.GET("/urls/availability", handleAvailability(svc))
 
 	r.GET("/:code", handleRedirect(svc, o.ipHashSalt))
 }
@@ -344,6 +364,19 @@ func handleResolve(svc *url.Service) gin.HandlerFunc {
 	}
 }
 
+func handleLookup(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resp, err := svc.Resolve(c.Request.Context(), &urlov1.ResolveRequest{
+			Code: c.Param("code"),
+		})
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, toShortLinkDTO(resp.GetLink()))
+	}
+}
+
 func handleGetStats(svc *url.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ownerID := ""
@@ -356,6 +389,156 @@ func handleGetStats(svc *url.Service) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, toShortLinkDTO(link))
+	}
+}
+
+func parseRFC3339Param(raw string) (time.Time, error) {
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, raw)
+}
+
+func handleAnalytics(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ownerID := ""
+		if u := auth.FromGin(c); u != nil {
+			ownerID = u.Sub
+		}
+		from, err := parseRFC3339Param(c.Query("from"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body", "message": "from must be RFC3339"})
+			return
+		}
+		to, err := parseRFC3339Param(c.Query("to"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body", "message": "to must be RFC3339"})
+			return
+		}
+		limit, _ := strconv.Atoi(c.Query("limit"))
+		resp, err := svc.AnalyticsAs(c.Request.Context(), c.Param("code"), ownerID, url.AnalyticsQuery{
+			Type:  url.AnalyticsType(c.Query("stats_type")),
+			From:  from,
+			To:    to,
+			Limit: limit,
+		})
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		items := make([]analyticsItemDTO, 0, len(resp.Items))
+		for _, it := range resp.Items {
+			items = append(items, analyticsItemDTO{Key: it.Key, Count: it.Count})
+		}
+		out := analyticsResponseDTO{
+			Code:      resp.Code,
+			StatsType: string(resp.StatsType),
+			Items:     items,
+		}
+		if !resp.From.IsZero() {
+			out.From = resp.From.UTC().Format(time.RFC3339)
+		}
+		if !resp.To.IsZero() {
+			out.To = resp.To.UTC().Format(time.RFC3339)
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+type updateRequest struct {
+	LongURL    *string `json:"long_url"`
+	TTLSeconds *int64  `json:"ttl_seconds"`
+}
+
+func handleUpdate(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var body updateRequest
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_body",
+				"message": err.Error(),
+			})
+			return
+		}
+		ownerID := ""
+		if u := auth.FromGin(c); u != nil {
+			ownerID = u.Sub
+		}
+		link, err := svc.UpdateAs(c.Request.Context(), c.Param("code"), ownerID, url.UpdatePatch{
+			LongURL:    body.LongURL,
+			TTLSeconds: body.TTLSeconds,
+		})
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, toShortLinkDTO(link))
+	}
+}
+
+type statusRequest struct {
+	Disabled bool   `json:"disabled"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+func handleStatus(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var body statusRequest
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_body",
+				"message": err.Error(),
+			})
+			return
+		}
+		ownerID := ""
+		if u := auth.FromGin(c); u != nil {
+			ownerID = u.Sub
+		}
+		rec, err := svc.SetDisabledAs(c.Request.Context(), c.Param("code"), ownerID, body.Disabled, body.Reason)
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":     rec.Code,
+			"disabled": rec.Disabled,
+			"reason":   rec.DisabledReason,
+		})
+	}
+}
+
+func handleGetStatus(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ownerID := ""
+		if u := auth.FromGin(c); u != nil {
+			ownerID = u.Sub
+		}
+		rec, err := svc.GetStatusAs(c.Request.Context(), c.Param("code"), ownerID)
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":     rec.Code,
+			"disabled": rec.Disabled,
+			"reason":   rec.DisabledReason,
+		})
+	}
+}
+
+func handleAvailability(svc *url.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		code := c.Query("code")
+		ok, err := svc.Availability(c.Request.Context(), code)
+		if err != nil {
+			writeStatusError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":      code,
+			"available": ok,
+		})
 	}
 }
 

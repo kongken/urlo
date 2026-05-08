@@ -8,12 +8,15 @@ import (
 
 // Record is the persistent representation of a short link.
 type Record struct {
-	Code       string    `json:"code"`
-	LongURL    string    `json:"long_url"`
-	OwnerID    string    `json:"owner_id,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	ExpiresAt  time.Time `json:"expires_at,omitzero"`
-	VisitCount int64     `json:"visit_count"`
+	Code           string    `json:"code"`
+	LongURL        string    `json:"long_url"`
+	OwnerID        string    `json:"owner_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	ExpiresAt      time.Time `json:"expires_at,omitzero"`
+	VisitCount     int64     `json:"visit_count"`
+	Disabled       bool      `json:"disabled,omitempty"`
+	DisabledAt     time.Time `json:"disabled_at,omitzero"`
+	DisabledReason string    `json:"disabled_reason,omitempty"`
 }
 
 // Expired reports whether the record has a non-zero ExpiresAt in the past.
@@ -28,6 +31,7 @@ func (r *Record) Expired() bool {
 type Store interface {
 	Create(ctx context.Context, r *Record) error
 	Get(ctx context.Context, code string) (*Record, error)
+	Update(ctx context.Context, r *Record) error
 	Delete(ctx context.Context, code string) error
 	// IncrVisit atomically (best-effort) increments VisitCount and returns
 	// the updated record.
@@ -36,6 +40,7 @@ type Store interface {
 	// Empty ownerID is invalid — implementations should return an empty
 	// slice rather than every record.
 	ListByOwner(ctx context.Context, ownerID string) ([]*Record, error)
+	Exists(ctx context.Context, code string) (bool, error)
 }
 
 var (
