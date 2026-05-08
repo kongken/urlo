@@ -81,7 +81,8 @@ session cookie (default name `urlo_session`).
   cookie → **401**.
 - Endpoints with **optional** ownership: `POST /api/v1/urls`,
   `GET /api/v1/urls/:code/stats`, `GET /api/v1/urls/:code/clicks`,
-  `DELETE /api/v1/urls/:code`.
+  `GET /api/v1/urls/:code/analytics`, `PATCH /api/v1/urls/:code`,
+  `PATCH /api/v1/urls/:code/status`, `DELETE /api/v1/urls/:code`.
   - Anonymous request to a link with no owner: allowed.
   - Authenticated request matching the link's owner: allowed.
   - Mismatch (owner set, caller is anonymous or different user): **403**.
@@ -232,7 +233,18 @@ curl http://localhost:8080/api/v1/urls/aB3xQ7
 ```
 
 **200 OK** — returns a `ShortLink`.
-**Errors**: `404` (not found or expired).
+**Errors**: `404` (not found / expired / disabled).
+
+---
+
+### `GET /api/v1/urls/:code/lookup` — Lookup
+
+Alias of `Resolve` for clients that prefer an explicit lookup route.
+Same response and side effects as `GET /api/v1/urls/:code` (includes
+`visit_count` increment).
+
+**200 OK** — returns a `ShortLink`.
+**Errors**: `404` (not found / expired / disabled).
 
 ---
 
@@ -296,6 +308,138 @@ Pass `next_page_token` back as `page_token` to fetch older events; an
 empty string means no more pages.
 
 **Errors**: `403` (not owner), `404` (not found).
+
+---
+
+### `GET /api/v1/urls/:code/analytics` — Aggregated analytics
+
+Return aggregate click metrics derived from recorded click events.
+Same ownership rules as `GetStats`.
+
+**Query parameters**
+
+| Param         | Type    | Required | Notes |
+|---------------|---------|----------|-------|
+| `stats_type`  | string  | yes      | `day`, `country`, or `referer` |
+| `from`        | string  | no       | RFC 3339 lower bound (inclusive) |
+| `to`          | string  | no       | RFC 3339 upper bound (inclusive) |
+| `limit`       | integer | no       | Top-N for `country` and `referer` (default 50) |
+
+```bash
+curl --cookie 'urlo_session=…' \
+  'http://localhost:8080/api/v1/urls/aB3xQ7/analytics?stats_type=referer&limit=5'
+```
+
+**200 OK**
+```json
+{
+  "code": "aB3xQ7",
+  "stats_type": "referer",
+  "items": [
+    { "key": "www.google.com", "count": 123 },
+    { "key": "(direct)", "count": 42 }
+  ]
+}
+```
+
+**Errors**: `400` (invalid `stats_type` / bad `from` / bad `to`),
+`403` (not owner), `404` (not found).
+
+---
+
+### `PATCH /api/v1/urls/:code` — Update link
+
+Update mutable fields of a short link. Same ownership rules as `Delete`.
+
+**Request body**
+
+| Field         | Type    | Required | Notes |
+|---------------|---------|----------|-------|
+| `long_url`    | string  | no       | New destination URL |
+| `ttl_seconds` | integer | no       | `0` clears expiration, `>0` resets expiration from now |
+
+At least one field must be provided.
+
+```bash
+curl -X PATCH --cookie 'urlo_session=…' \
+  -H 'Content-Type: application/json' \
+  -d '{"long_url":"https://example.com/new-target"}' \
+  http://localhost:8080/api/v1/urls/aB3xQ7
+```
+
+**200 OK** — returns updated `ShortLink`.
+**Errors**: `400` (invalid body / invalid URL / no fields),
+`403` (not owner), `404` (not found).
+
+---
+
+### `PATCH /api/v1/urls/:code/status` — Enable / disable link
+
+Toggle link availability without deleting it. Disabled links resolve as `404`.
+Same ownership rules as `Delete`.
+
+**Request body**
+
+| Field       | Type    | Required | Notes |
+|-------------|---------|----------|-------|
+| `disabled`  | boolean | yes      | `true` disables, `false` enables |
+| `reason`    | string  | no       | Optional reason (stored for admin/debug context) |
+
+```bash
+curl -X PATCH --cookie 'urlo_session=…' \
+  -H 'Content-Type: application/json' \
+  -d '{"disabled":true,"reason":"abuse"}' \
+  http://localhost:8080/api/v1/urls/aB3xQ7/status
+```
+
+**200 OK**
+```json
+{ "code": "aB3xQ7", "disabled": true, "reason": "abuse" }
+```
+
+**Errors**: `400` (invalid body), `403` (not owner), `404` (not found).
+
+---
+
+### `GET /api/v1/urls/:code/status` — Read current enable/disable status
+
+Return the persisted status for a short link. Same ownership rules as
+`GetStats`.
+
+```bash
+curl --cookie 'urlo_session=…' \
+  http://localhost:8080/api/v1/urls/aB3xQ7/status
+```
+
+**200 OK**
+```json
+{ "code": "aB3xQ7", "disabled": true, "reason": "abuse" }
+```
+
+**Errors**: `403` (not owner), `404` (not found).
+
+---
+
+### `GET /api/v1/urls/availability` — Check custom code availability
+
+Check whether a custom code is currently free to use.
+
+**Query parameters**
+
+| Param   | Type   | Required | Notes |
+|---------|--------|----------|-------|
+| `code`  | string | yes      | Must match code rules (`[A-Za-z0-9]{1,32}`) |
+
+```bash
+curl 'http://localhost:8080/api/v1/urls/availability?code=launch'
+```
+
+**200 OK**
+```json
+{ "code": "launch", "available": true }
+```
+
+**Errors**: `400` (missing/invalid code).
 
 ---
 

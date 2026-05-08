@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { BarChart3, QrCode, Wand2, Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,10 +41,36 @@ export default function Landing() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ShortLink | null>(null)
   const [copied, setCopied] = useState(false)
+  const [checkingCode, setCheckingCode] = useState(false)
+  const [codeAvailable, setCodeAvailable] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    const code = customCode.trim()
+    if (!code) {
+      setCodeAvailable(null)
+      return
+    }
+    const tid = setTimeout(async () => {
+      try {
+        setCheckingCode(true)
+        const res = await api.checkAvailability(code)
+        setCodeAvailable(res.available)
+      } catch {
+        setCodeAvailable(null)
+      } finally {
+        setCheckingCode(false)
+      }
+    }, 300)
+    return () => clearTimeout(tid)
+  }, [customCode])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!longUrl.trim()) return
+    if (customCode.trim() && codeAvailable === false) {
+      toast.error("Custom code is already taken")
+      return
+    }
     setLoading(true)
     try {
       const trimmedCustom = customCode.trim()
@@ -102,6 +128,17 @@ export default function Landing() {
               placeholder="Optional custom code (e.g. launch)"
               className="w-full sm:max-w-xs text-sm"
             />
+            {customCode.trim() && (
+              <span className="text-xs text-muted-foreground">
+                {checkingCode
+                  ? "Checking code..."
+                  : codeAvailable === null
+                    ? "Unable to verify now"
+                    : codeAvailable
+                      ? "Code is available"
+                      : "Code is already taken"}
+              </span>
+            )}
             <div
               role="radiogroup"
               aria-label="Code length"

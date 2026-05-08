@@ -36,6 +36,16 @@ func (m *MemoryStore) Get(_ context.Context, code string) (*Record, error) {
 	return &r, nil
 }
 
+func (m *MemoryStore) Update(_ context.Context, r *Record) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.records[r.Code]; !ok {
+		return ErrNotFound
+	}
+	m.records[r.Code] = *r
+	return nil
+}
+
 func (m *MemoryStore) Delete(_ context.Context, code string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -72,4 +82,11 @@ func (m *MemoryStore) ListByOwner(_ context.Context, ownerID string) ([]*Record,
 		}
 	}
 	return out, nil
+}
+
+func (m *MemoryStore) Exists(_ context.Context, code string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.records[code]
+	return ok, nil
 }

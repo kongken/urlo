@@ -196,3 +196,64 @@ func TestRedirectNotFound(t *testing.T) {
 		t.Errorf("status=%d", rec.Code)
 	}
 }
+
+func TestAvailability(t *testing.T) {
+	r, _ := newTestRouter()
+	rr := doJSON(t, r, http.MethodGet, "/api/v1/urls/availability?code=abc123", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Available bool `json:"available"`
+	}
+	out = decode[struct {
+		Available bool `json:"available"`
+	}](t, rr)
+	if !out.Available {
+		t.Fatalf("expected available=true")
+	}
+}
+
+func TestUpdateAndDisable(t *testing.T) {
+	r, _ := newTestRouter()
+	rr := doJSON(t, r, http.MethodPost, "/api/v1/urls", map[string]any{
+		"long_url": "https://example.com/start",
+	})
+	created := decode[linkResp](t, rr)
+
+	rr = doJSON(t, r, http.MethodPatch, "/api/v1/urls/"+created.Code, map[string]any{
+		"long_url": "https://example.com/updated",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	updated := decode[linkResp](t, rr)
+	if updated.LongURL != "https://example.com/updated" {
+		t.Fatalf("long_url=%q", updated.LongURL)
+	}
+
+	rr = doJSON(t, r, http.MethodPatch, "/api/v1/urls/"+created.Code+"/status", map[string]any{
+		"disabled": true,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status patch: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doJSON(t, r, http.MethodGet, "/api/v1/urls/"+created.Code+"/status", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status get: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var statusBody struct {
+		Disabled bool `json:"disabled"`
+	}
+	statusBody = decode[struct {
+		Disabled bool `json:"disabled"`
+	}](t, rr)
+	if !statusBody.Disabled {
+		t.Fatalf("expected disabled=true")
+	}
+
+	rr = doJSON(t, r, http.MethodGet, "/api/v1/urls/"+created.Code, nil)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("resolve disabled status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}

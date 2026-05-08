@@ -171,6 +171,34 @@ func (s *Store) Delete(ctx context.Context, code string) error {
 	return nil
 }
 
+func (s *Store) Update(ctx context.Context, r *url.Record) error {
+	// Ensure the object exists so callers get ErrNotFound semantics.
+	_, err := s.client.HeadObject(ctx, &awss3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key(r.Code)),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			return url.ErrNotFound
+		}
+		return err
+	}
+	body, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.PutObject(ctx, &awss3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(s.key(r.Code)),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String("application/json"),
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) IncrVisit(ctx context.Context, code string) (*url.Record, error) {
 	r, err := s.Get(ctx, code)
 	if err != nil {
@@ -235,6 +263,20 @@ func (s *Store) ListByOwner(ctx context.Context, ownerID string) ([]*url.Record,
 		token = page.NextContinuationToken
 	}
 	return out, nil
+}
+
+func (s *Store) Exists(ctx context.Context, code string) (bool, error) {
+	_, err := s.client.HeadObject(ctx, &awss3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key(code)),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func isNotFound(err error) bool {

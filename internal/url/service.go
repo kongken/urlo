@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,9 +37,42 @@ type Service struct {
 	store    Store
 	recorder clicks.Recorder
 
-	mu       sync.RWMutex
-	baseURL  string
-	codeLen  int
+	mu      sync.RWMutex
+	baseURL string
+	codeLen int
+}
+
+type UpdatePatch struct {
+	LongURL    *string
+	TTLSeconds *int64
+}
+
+type AnalyticsType string
+
+const (
+	AnalyticsByDay     AnalyticsType = "day"
+	AnalyticsByCountry AnalyticsType = "country"
+	AnalyticsByReferer AnalyticsType = "referer"
+)
+
+type AnalyticsQuery struct {
+	Type  AnalyticsType
+	From  time.Time
+	To    time.Time
+	Limit int
+}
+
+type AnalyticsItem struct {
+	Key   string
+	Count int64
+}
+
+type AnalyticsResult struct {
+	Code      string
+	StatsType AnalyticsType
+	From      time.Time
+	To        time.Time
+	Items     []AnalyticsItem
 }
 
 type Options struct {
@@ -227,6 +262,20 @@ func (s *Service) DeleteAs(ctx context.Context, code, ownerID string) error {
 	return nil
 }
 
+func (s *Service) Availability(ctx context.Context, code string) (bool, error) {
+	if code == "" {
+		return false, status.Error(codes.InvalidArgument, "code is required")
+	}
+	if !isValidCode(code) {
+		return false, status.Error(codes.InvalidArgument, "code must be 1-32 chars from [A-Za-z0-9]")
+	}
+	ok, err := s.store.Exists(ctx, code)
+	if err != nil {
+		return false, status.Errorf(codes.Internal, "store: %v", err)
+	}
+	return !ok, nil
+}
+
 // GetStatsAs returns stats with the same ownership rules as DeleteAs.
 func (s *Service) GetStatsAs(ctx context.Context, code, ownerID string) (*urlov1.ShortLink, error) {
 	if code == "" {
@@ -242,6 +291,181 @@ func (s *Service) GetStatsAs(ctx context.Context, code, ownerID string) (*urlov1
 	return s.toProto(r), nil
 }
 
+func (s *Service) UpdateAs(ctx context.Context, code, ownerID string, patch UpdatePatch) (*urlov1.ShortLink, error) {
+	if code == "" {
+		return nil, status.Error(codes.InvalidArgument, "code is required")
+	}
+	if patch.LongURL == nil && patch.TTLSeconds == nil {
+		return nil, status.Error(codes.InvalidArgument, "at least one field is required")
+	}
+
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+	if r.OwnerID != "" && r.OwnerID != ownerID {
+		return nil, status.Error(codes.PermissionDenied, "not owner")
+	}
+
+	if patch.LongURL != nil {
+		next := strings.TrimSpace(*patch.LongURL)
+		if next == "" {
+			return nil, status.Error(codes.InvalidArgument, "long_url is required")
+		}
+		if _, err := url.ParseRequestURI(next); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "long_url is not a valid URL: %v", err)
+		}
+		r.LongURL = next
+	}
+	if patch.TTLSeconds != nil {
+		if *patch.TTLSeconds < 0 {
+			return nil, status.Error(codes.InvalidArgument, "ttl_seconds must be >= 0")
+		}
+		if *patch.TTLSeconds == 0 {
+			r.ExpiresAt = time.Time{}
+		} else {
+			r.ExpiresAt = time.Now().UTC().Add(time.Duration(*patch.TTLSeconds) * time.Second)
+		}
+	}
+	if err := s.store.Update(ctx, r); err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+	return s.toProto(r), nil
+}
+
+func (s *Service) SetDisabledAs(ctx context.Context, code, ownerID string, disabled bool, reason string) (*Record, error) {
+	if code == "" {
+		return nil, status.Error(codes.InvalidArgument, "code is required")
+	}
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+	if r.OwnerID != "" && r.OwnerID != ownerID {
+		return nil, status.Error(codes.PermissionDenied, "not owner")
+	}
+	r.Disabled = disabled
+	if disabled {
+		r.DisabledAt = time.Now().UTC()
+		r.DisabledReason = strings.TrimSpace(reason)
+	} else {
+		r.DisabledAt = time.Time{}
+		r.DisabledReason = ""
+	}
+	if err := s.store.Update(ctx, r); err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+	return r, nil
+}
+
+func (s *Service) GetStatusAs(ctx context.Context, code, ownerID string) (*Record, error) {
+	if code == "" {
+		return nil, status.Error(codes.InvalidArgument, "code is required")
+	}
+	r, err := s.store.Get(ctx, code)
+	if err != nil {
+		return nil, mapStoreErr(err, code)
+	}
+	if r.OwnerID != "" && r.OwnerID != ownerID {
+		return nil, status.Error(codes.PermissionDenied, "not owner")
+	}
+	return r, nil
+}
+
+func (s *Service) AnalyticsAs(ctx context.Context, code, ownerID string, q AnalyticsQuery) (*AnalyticsResult, error) {
+	if _, err := s.GetStatsAs(ctx, code, ownerID); err != nil {
+		return nil, err
+	}
+	if q.Type != AnalyticsByDay && q.Type != AnalyticsByCountry && q.Type != AnalyticsByReferer {
+		return nil, status.Error(codes.InvalidArgument, "stats_type must be one of day|country|referer")
+	}
+	const pageSize = 500
+	type counter struct {
+		key string
+		n   int64
+	}
+	counts := make(map[string]int64)
+	pageToken := ""
+	for {
+		resp, err := s.ListClicks(ctx, &urlov1.ListClicksRequest{
+			Code:      code,
+			PageSize:  pageSize,
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, evt := range resp.GetEvents() {
+			ts := time.Time{}
+			if p := evt.GetTs(); p != nil {
+				ts = p.AsTime()
+			}
+			if ts.IsZero() {
+				continue
+			}
+			if !q.From.IsZero() && ts.Before(q.From) {
+				continue
+			}
+			if !q.To.IsZero() && ts.After(q.To) {
+				continue
+			}
+			key := ""
+			switch q.Type {
+			case AnalyticsByDay:
+				key = ts.UTC().Format("2006-01-02")
+			case AnalyticsByCountry:
+				key = strings.TrimSpace(evt.GetCountry())
+				if key == "" {
+					key = "(unknown)"
+				}
+			case AnalyticsByReferer:
+				key = strings.TrimSpace(evt.GetReferrerHost())
+				if key == "" {
+					key = "(direct)"
+				}
+			}
+			counts[key]++
+		}
+		pageToken = resp.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
+	}
+	items := make([]counter, 0, len(counts))
+	for k, v := range counts {
+		items = append(items, counter{key: k, n: v})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].n == items[j].n {
+			return items[i].key < items[j].key
+		}
+		return items[i].n > items[j].n
+	})
+	if q.Type == AnalyticsByDay {
+		sort.Slice(items, func(i, j int) bool {
+			return items[i].key < items[j].key
+		})
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if q.Type != AnalyticsByDay && len(items) > limit {
+		items = items[:limit]
+	}
+	out := make([]AnalyticsItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, AnalyticsItem{Key: item.key, Count: item.n})
+	}
+	return &AnalyticsResult{
+		Code:      code,
+		StatsType: q.Type,
+		From:      q.From,
+		To:        q.To,
+		Items:     out,
+	}, nil
+}
+
 func (s *Service) Resolve(ctx context.Context, req *urlov1.ResolveRequest) (*urlov1.ResolveResponse, error) {
 	code := req.GetCode()
 	if code == "" {
@@ -255,6 +479,9 @@ func (s *Service) Resolve(ctx context.Context, req *urlov1.ResolveRequest) (*url
 	if r.Expired() {
 		_ = s.store.Delete(ctx, code)
 		return nil, status.Errorf(codes.NotFound, "code %q expired", code)
+	}
+	if r.Disabled {
+		return nil, status.Errorf(codes.NotFound, "code %q not found", code)
 	}
 
 	updated, err := s.store.IncrVisit(ctx, code)
