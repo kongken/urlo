@@ -6,12 +6,9 @@ import "urlo/v1/url.proto";
 
 option go_package = "github.com/kongken/urlo/pkg/proto/urlo/v1;urlov1";
 
-// UrlService defines the v1 URL shortener API contract.
-// Planned HTTP mapping:
-// - POST   /api/v1/urls           Shorten
-// - GET    /api/v1/urls/{code}    Resolve
-// - GET    /api/v1/urls/{code}/stats GetStats
-// - DELETE /api/v1/urls/{code}    Delete
+// UrlService defines the v1 URL shortener gRPC contract.
+// Additional HTTP-only routes (auth, analytics, update, list mine, …)
+// are documented in api.md at the repository root.
 service UrlService {
   rpc Shorten(ShortenRequest) returns (ShortenResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
