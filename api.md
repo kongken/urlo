@@ -1,10 +1,13 @@
 # urlo API
 
-URL shortener service. Exposes both an HTTP/JSON API (port `8080`) and a
-gRPC API (port `9090`); both are backed by the same `urlo.v1.UrlService`.
+URL shortener service. Exposes an HTTP/JSON API (port `8080` in local examples)
+and a gRPC API (port `9090` in local examples). The gRPC surface implements
+`urlo.v1.UrlService` with **Shorten, Resolve, GetStats, Delete, ListClicks**
+only. Everything else below (auth, list mine, lookup alias, analytics,
+update, enable/disable, availability, rate-limit helper responses) is **HTTP-only**.
 
 - **Base URL (HTTP)**: `http://<host>:8080`
-- **gRPC service**: `urlo.v1.UrlService` (`pkg/proto/urlo/v1/service.proto`)
+- **gRPC service**: `urlo.v1.UrlService` (`proto/urlo/v1/service.proto`)
 - **Content type**: `application/json` for all HTTP request/response bodies
 
 ## Conventions
@@ -32,8 +35,8 @@ Returned by the click-log endpoint:
 | `code`          | string  | Short code                                                     |
 | `ts`            | string  | RFC 3339 timestamp of the click                                |
 | `ip_hash`       | string  | First 16 hex chars of `sha256(ip + salt)`; empty if disabled   |
-| `country`       | string  | Country code (empty until GeoIP is wired)                      |
-| `city`          | string  | City (empty until GeoIP is wired)                              |
+| `country`       | string  | Country code (currently not populated on ingest; stays empty) |
+| `city`          | string  | City (same as `country`)                                       |
 | `referrer`      | string  | Full `Referer` header value                                    |
 | `referrer_host` | string  | Lowercase hostname extracted from `referrer`                   |
 | `user_agent`    | string  | Raw `User-Agent` header                                        |
@@ -45,14 +48,26 @@ Returned by the click-log endpoint:
 
 ### Error response
 
-All non-2xx responses use:
+Most handler errors use:
 
 ```json
 { "error": "<grpc_code>", "message": "<human readable>" }
 ```
 
-`error` is the gRPC status code name (`InvalidArgument`, `NotFound`, …).
-HTTP status mapping:
+`error` is the gRPC status code name (`InvalidArgument`, `NotFound`, …) when
+the failure comes from core URL logic.
+
+**HTTP-layer exceptions** (literal `error` string, not a gRPC code name):
+
+| `error`           | Typical HTTP | When |
+|-------------------|--------------|------|
+| `invalid_body`    | 400          | Malformed JSON or validation on the HTTP handler (e.g. analytics `from`/`to`, missing `id_token`) |
+| `invalid_token`   | 401          | Google ID token rejected on `POST /api/v1/auth/google` |
+| `auth_disabled`   | 503          | Google auth not configured |
+| `rate_limited`    | 429          | Per-IP shorten limit exceeded |
+| `internal`        | 500          | e.g. session issuance failure after a valid Google login |
+
+HTTP status mapping for gRPC-derived errors:
 
 | gRPC code              | HTTP |
 |------------------------|------|
@@ -115,6 +130,21 @@ curl http://localhost:8080/health
 
 ---
 
+### `GET /ping`
+
+Lightweight readiness-style probe (separate from `/health`).
+
+```bash
+curl http://localhost:8080/ping
+```
+
+**200 OK**
+```json
+{ "message": "pong" }
+```
+
+---
+
 ### `POST /api/v1/auth/google` — Exchange Google ID token
 
 Verify a Google ID token and start a session. Sets an HTTP-only
@@ -137,8 +167,10 @@ curl -X POST http://localhost:8080/api/v1/auth/google \
 { "user": { "sub": "1234…", "email": "you@example.com", "name": "You" } }
 ```
 
-**Errors**: `400` (missing `id_token`), `401` (invalid token),
-`503` (auth disabled on the server).
+**Errors**: `400` with `error: "invalid_body"` (missing `id_token`),
+`401` with `error: "invalid_token"` (invalid Google token),
+`500` with `error: "internal"` (session cookie could not be issued),
+`503` with `error: "auth_disabled"` (Google auth not configured).
 
 ---
 
@@ -158,7 +190,8 @@ Returns the user attached to the current session.
 { "user": { "sub": "1234…", "email": "you@example.com", "name": "You" } }
 ```
 
-**Errors**: `401` (no/invalid session), `503` (auth disabled).
+**Errors**: `401` with body `{ "error": "unauthenticated" }` (no/invalid session),
+`503` (auth disabled).
 
 ---
 
@@ -182,8 +215,9 @@ curl --cookie 'urlo_session=…' http://localhost:8080/api/v1/urls
 
 ### `POST /api/v1/urls` — Shorten
 
-Create a new short link. The server generates a 6-char code unless
-`custom_code` is provided. When the caller is authenticated, the new
+Create a new short link. The server generates a random code unless
+`custom_code` is set; default length comes from `code_length` in
+`config.yaml` (clamped to `[6, 32]`). When the caller is authenticated, the new
 link is tagged with their `sub` as owner.
 
 Subject to per-IP rate limiting when `rate_limit.enabled = true`.
@@ -233,7 +267,7 @@ curl http://localhost:8080/api/v1/urls/aB3xQ7
 ```
 
 **200 OK** — returns a `ShortLink`.
-**Errors**: `404` (not found / expired / disabled).
+**Errors**: `404` (not found, expired, or disabled).
 
 ---
 
@@ -244,7 +278,7 @@ Same response and side effects as `GET /api/v1/urls/:code` (includes
 `visit_count` increment).
 
 **200 OK** — returns a `ShortLink`.
-**Errors**: `404` (not found / expired / disabled).
+**Errors**: `404` (not found, expired, or disabled).
 
 ---
 
@@ -252,14 +286,17 @@ Same response and side effects as `GET /api/v1/urls/:code` (includes
 
 Same payload as `Resolve`, but does **not** increment `visit_count`.
 If the link has an owner, the caller must be authenticated as that owner
-or the request fails with **403**.
+or the request fails with **403**. Unlike `Resolve`, this does **not**
+treat disabled or expired rows as missing: you still get **200** with the
+stored `ShortLink` when the code exists and ownership passes (expired links
+are only removed from storage when a successful `Resolve` runs for that code).
 
 ```bash
 curl http://localhost:8080/api/v1/urls/aB3xQ7/stats
 ```
 
 **200 OK** — returns a `ShortLink`.
-**Errors**: `403` (not owner), `404` (not found).
+**Errors**: `403` (not owner), `404` (unknown code).
 
 ---
 
@@ -341,6 +378,9 @@ curl --cookie 'urlo_session=…' \
   ]
 }
 ```
+
+For `stats_type=country`, clicks with no country set are rolled into the key
+`(unknown)` (matches current aggregation logic).
 
 **Errors**: `400` (invalid `stats_type` / bad `from` / bad `to`),
 `403` (not owner), `404` (not found).
@@ -468,7 +508,7 @@ curl -i http://localhost:8080/aB3xQ7
 ```
 
 **302 Found** with `Location: <long_url>`.
-**Errors**: `404` (not found or expired).
+**Errors**: `404` (not found, expired, or disabled — same rules as `Resolve`).
 
 > Reserved paths (`/health`, `/ping`, `/api`) are handled by other
 > routes and will not be treated as codes.
@@ -477,7 +517,7 @@ curl -i http://localhost:8080/aB3xQ7
 
 ## gRPC
 
-The same operations are available via gRPC on port `9090`:
+These RPCs are implemented on the gRPC server (port `9090` in local examples):
 
 | RPC          | Request              | Response              |
 |--------------|----------------------|-----------------------|
@@ -486,6 +526,9 @@ The same operations are available via gRPC on port `9090`:
 | `GetStats`   | `GetStatsRequest`    | `GetStatsResponse`    |
 | `Delete`     | `DeleteRequest`      | `DeleteResponse`      |
 | `ListClicks` | `ListClicksRequest`  | `ListClicksResponse`  |
+
+There is **no** gRPC for `Update`, `SetDisabled`, `GetStatus`, `Analytics`,
+`Availability`, or `ListByOwner` — use HTTP for those.
 
 ```bash
 grpcurl -plaintext \
