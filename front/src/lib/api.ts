@@ -90,7 +90,20 @@ export interface AnalyticsResponse {
   items: AnalyticsItem[]
 }
 
+export function getApiBaseUrl(): string {
+  return getBaseUrl()
+}
+
 export const api = {
+  health(baseUrl?: string) {
+    const prefix = baseUrl?.trim() ?? getBaseUrl()
+    return fetch(`${prefix}/health`, { credentials: "include" }).then(async (res) => {
+      const text = await res.text()
+      const data = text ? JSON.parse(text) : null
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return data as { status?: string; message?: string }
+    })
+  },
   shorten(body: ShortenRequest) {
     return request<ShortLink>("/api/v1/urls", {
       method: "POST",
