@@ -5,7 +5,7 @@
 
 URL shortener with an HTTP/JSON API, a gRPC API, optional Google sign-in, and a React (Vite + TypeScript) web UI.
 
-**功能概览（与代码一致）**：短链生成（随机或自定义码、可选 TTL、可配置随机码长度）、302 跳转、访问计数、按所有者管理链接、链接更新与启用/停用、点击事件（可选 Redis Stream）、聚合分析、按 IP 的创建频率限制、内存或 S3 持久化。详细 HTTP 约定见 [`api.md`](api.md)。
+**功能概览（与代码一致）**：短链生成（随机或自定义码、可选 TTL、可配置随机码长度）、302 跳转、访问计数、按所有者管理链接、链接更新与启用/停用、点击事件（可选 Redis Stream）、聚合分析、按 IP 的创建频率限制、内存或 S3 持久化。详细 HTTP/gRPC 约定见 [`docs/api/`](./docs/api/README.md)。
 
 ## Features
 
@@ -29,7 +29,7 @@ URL shortener with an HTTP/JSON API, a gRPC API, optional Google sign-in, and a 
 | `proto/urlo/v1` | Protobuf API (gRPC subset) |
 | `pkg/proto/urlo/v1` | Generated Go protobuf / Connect code |
 | `front/` | Vite + React SPA |
-| `api.md` | HTTP/JSON reference |
+| `docs/api/` | HTTP/gRPC API reference |
 
 ## Quick start (local)
 
@@ -49,10 +49,11 @@ cd front && pnpm install && pnpm dev
 
 ## API reference
 
-See [`api.md`](api.md) for routes, payloads, auth rules, rate limiting, and gRPC coverage.
+See [`docs/api/`](./docs/api/README.md) for routes, payloads, auth rules, rate limiting, and gRPC coverage.
 
 ## Development
 
 - `make proto` — regenerate Go code from protos (`buf generate`).
 - `make build` — compile to `bin/urlo`.
-- `go test ./...` — run Go tests.
+- Backend checks: `go test ./...`.
+- Frontend checks: `cd front && pnpm lint && pnpm build`.

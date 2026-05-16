@@ -1,0 +1,57 @@
+name: Frontend
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "front/**"
+      - ".github/workflows/front.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "front/**"
+      - ".github/workflows/front.yml"
+
+jobs:
+  lint-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: front/package.json
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-store
+        working-directory: front
+        run: echo "store_dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.store_dir }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('front/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        working-directory: front
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: front
+        run: pnpm lint
+
+      - name: Build
+        working-directory: front
+        run: pnpm build

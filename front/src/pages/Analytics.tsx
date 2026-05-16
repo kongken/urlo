@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { ArrowLeft, RefreshCw } from "lucide-react"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button-variants"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Table,
@@ -18,9 +19,70 @@ import {
   type ClickEvent,
   type ShortLink,
 } from "@/lib/api"
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/contexts/useAuth"
 import { QrCard } from "@/components/QrCard"
 import { toast } from "sonner"
+
+type RangeKey = "all" | "24h" | "7d" | "30d"
+
+const RANGE_OPTIONS: { value: RangeKey; label: string; ms?: number }[] = [
+  { value: "all", label: "All time" },
+  { value: "24h", label: "24h", ms: 24 * 60 * 60 * 1000 },
+  { value: "7d", label: "7 days", ms: 7 * 24 * 60 * 60 * 1000 },
+  { value: "30d", label: "30 days", ms: 30 * 24 * 60 * 60 * 1000 },
+]
+
+function getRangeBounds(range: RangeKey) {
+  const opt = RANGE_OPTIONS.find((item) => item.value === range)
+  if (!opt?.ms) return {}
+  const to = new Date()
+  const from = new Date(to.getTime() - opt.ms)
+  return { from: from.toISOString(), to: to.toISOString() }
+}
+
+function inRange(event: ClickEvent, range: RangeKey) {
+  const opt = RANGE_OPTIONS.find((item) => item.value === range)
+  if (!opt?.ms) return true
+  const ts = new Date(event.ts).getTime()
+  return ts >= Date.now() - opt.ms
+}
+
+function TrendChart({ rows }: { rows: AnalyticsItem[] }) {
+  const max = Math.max(1, ...rows.map((r) => r.count))
+  return (
+    <Card className="md:col-span-2">
+      <CardHeader>
+        <CardTitle>Daily Trend</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No trend data yet.</p>
+        ) : (
+          <div className="flex h-44 items-end gap-2 overflow-x-auto pb-1">
+            {rows.map((r) => {
+              const pct = Math.max(6, Math.round((r.count / max) * 100))
+              return (
+                <div key={r.key} className="flex min-w-10 flex-1 flex-col items-center gap-2">
+                  <div className="text-xs tabular-nums text-muted-foreground">{r.count}</div>
+                  <div className="flex h-28 w-full items-end rounded bg-muted">
+                    <div
+                      className="w-full rounded bg-primary transition-all"
+                      style={{ height: `${pct}%` }}
+                      title={`${r.key}: ${r.count}`}
+                    />
+                  </div>
+                  <div className="max-w-14 truncate text-[10px] text-muted-foreground" title={r.key}>
+                    {r.key.slice(5)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 const FETCH_PAGE_SIZE = 500
 
@@ -114,6 +176,9 @@ export default function Analytics() {
   const [days, setDays] = useState<AnalyticsItem[]>([])
   const [linkDisabled, setLinkDisabled] = useState(false)
   const [linkDisabledReason, setLinkDisabledReason] = useState("")
+  const [range, setRange] = useState<RangeKey>("all")
+  const [nextPageToken, setNextPageToken] = useState("")
+  const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
     if (code) return
@@ -154,15 +219,18 @@ export default function Analytics() {
 
       if (c.status === "fulfilled") {
         setEvents(c.value.events)
+        setNextPageToken(c.value.next_page_token)
       } else {
         const err = c.reason as Error & { status?: number }
         // 403 = ownership mismatch (anon viewing owned link); show a softer note
         if (err?.status === 403) {
           setClicksUnsupported(true)
           setEvents([])
+          setNextPageToken("")
         } else {
           toast.error(err?.message || "Failed to load clicks")
           setEvents([])
+          setNextPageToken("")
         }
       }
       if (st.status === "fulfilled") {
@@ -172,10 +240,11 @@ export default function Analytics() {
         setLinkDisabled(false)
         setLinkDisabledReason("")
       }
+      const bounds = getRangeBounds(range)
       const [aRef, aCountry, aDay] = await Promise.allSettled([
-        api.analytics(code, { statsType: "referer", limit: 5 }),
-        api.analytics(code, { statsType: "country", limit: 5 }),
-        api.analytics(code, { statsType: "day", limit: 14 }),
+        api.analytics(code, { statsType: "referer", limit: 5, ...bounds }),
+        api.analytics(code, { statsType: "country", limit: 5, ...bounds }),
+        api.analytics(code, { statsType: "day", limit: 30, ...bounds }),
       ])
       if (aRef.status === "fulfilled") setReferrers(aRef.value.items)
       if (aCountry.status === "fulfilled") setCountries(aCountry.value.items)
@@ -185,17 +254,35 @@ export default function Analytics() {
     }
   }
 
+  async function loadMoreClicks() {
+    if (!code || !nextPageToken || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const page = await api.listClicks(code, {
+        pageSize: FETCH_PAGE_SIZE,
+        pageToken: nextPageToken,
+      })
+      setEvents((prev) => [...prev, ...page.events])
+      setNextPageToken(page.next_page_token)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load more clicks")
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   useEffect(() => {
     void refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code])
+  }, [code, range])
 
-  const total = events.length
+  const rangedEvents = events.filter((event) => inRange(event, range))
+  const total = rangedEvents.length
   const uniqueVisitors = new Set(
-    events.map((e) => e.ip_hash).filter(Boolean),
+    rangedEvents.map((e) => e.ip_hash).filter(Boolean),
   ).size
-  const devices = topNFromEvents(events, (e) => e.device, 5)
-  const browsers = topNFromEvents(events, (e) => e.browser, 5)
+  const devices = topNFromEvents(rangedEvents, (e) => e.device, 5)
+  const browsers = topNFromEvents(rangedEvents, (e) => e.browser, 5)
 
   if (!code) {
     return (
@@ -241,14 +328,33 @@ export default function Analytics() {
             </p>
           </div>
         </div>
-        <Button variant="outline" disabled={loading} onClick={refresh} className="self-start sm:self-auto">
-          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-        </Button>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="inline-flex rounded-full border bg-card p-0.5 text-sm">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setRange(opt.value)}
+                className={
+                  "rounded-full px-3 py-1 transition-colors " +
+                  (range === opt.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground")
+                }
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <Button variant="outline" disabled={loading} onClick={refresh} className="self-start sm:self-auto">
+            <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+          </Button>
+        </div>
       </div>
 
       {link && (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
-          <Stat label="Total Clicks" value={link.visit_count} />
+          <Stat label={range === "all" ? "Total Clicks" : "Loaded Clicks"} value={range === "all" ? link.visit_count : total} />
           <Stat
             label="Unique Visitors"
             value={uniqueVisitors || "—"}
@@ -325,6 +431,7 @@ export default function Analytics() {
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2">
+            <TrendChart rows={days} />
             <Breakdown
               title="Top Referrers"
               rows={referrers.map((i) => ({ label: i.key, count: i.count }))}
@@ -335,11 +442,6 @@ export default function Analytics() {
               rows={countries.map((i) => ({ label: i.key, count: i.count }))}
               total={total}
               empty="GeoIP not configured on the server."
-            />
-            <Breakdown
-              title="Daily Trend"
-              rows={days.map((i) => ({ label: i.key, count: i.count }))}
-              total={Math.max(1, days.reduce((acc, i) => acc + i.count, 0))}
             />
             <Breakdown
               title="Browsers"
@@ -358,7 +460,7 @@ export default function Analytics() {
               <CardTitle>Recent Clicks</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {events.length === 0 ? (
+              {rangedEvents.length === 0 ? (
                 <p className="p-6 text-sm text-muted-foreground">
                   No clicks recorded yet. Share your short link to start
                   collecting data.
@@ -376,7 +478,7 @@ export default function Analytics() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {events.slice(0, 50).map((e) => (
+                      {rangedEvents.slice(0, 50).map((e) => (
                         <TableRow key={e.id}>
                           <TableCell className="font-mono text-xs whitespace-nowrap">
                             {new Date(e.ts).toLocaleString()}
@@ -400,12 +502,17 @@ export default function Analytics() {
             </CardContent>
           </Card>
 
-          {events.length === FETCH_PAGE_SIZE && (
-            <p className="text-xs text-muted-foreground">
-              Showing the {FETCH_PAGE_SIZE} most recent clicks. Older events
-              are not included in these aggregates.
-            </p>
-          )}
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Showing {Math.min(rangedEvents.length, 50)} of {rangedEvents.length} loaded clicks
+              {range !== "all" ? ` in ${RANGE_OPTIONS.find((opt) => opt.value === range)?.label}` : ""}.
+            </span>
+            {nextPageToken && (
+              <Button size="sm" variant="outline" disabled={loadingMore} onClick={loadMoreClicks}>
+                {loadingMore ? "Loading..." : "Load more clicks"}
+              </Button>
+            )}
+          </div>
         </>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/contexts/useAuth"
 
 declare global {
   interface Window {

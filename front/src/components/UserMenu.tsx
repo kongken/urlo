@@ -1,7 +1,7 @@
 import { LogOut } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/contexts/useAuth"
 import { LoginButton } from "@/components/LoginButton"
 
 export function UserMenu() {

@@ -21,7 +21,17 @@ internal/url/         # Core URL service: Service, Store interface
 internal/url/s3store/ # S3-backed Store implementation
 proto/urlo/v1/        # .proto sources (buf-managed)
 pkg/proto/urlo/v1/    # generated protobuf/grpc/connect Go code
+docs/api/             # HTTP/gRPC API reference (split by topic)
 ```
+
+## Docs
+
+API reference lives under `docs/api/` and is split by topic:
+`README.md` (index + endpoint table), `conventions.md`, `auth.md`,
+`urls.md`, `clicks.md`, `redirect.md`, `grpc.md`. When adding or
+changing an endpoint, update the matching file (and the index table in
+`docs/api/README.md` if the route list changes). The legacy top-level
+`api.md` has been removed.
 
 ## Commands
 

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, upsertLocalLink, type ShortLink } from "@/lib/api"
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/contexts/useAuth"
 import { QrCard } from "@/components/QrCard"
 import { toast } from "sonner"
 
@@ -33,6 +33,8 @@ const CODE_LENGTHS: Record<CodeStyle, number> = {
   long: 12,
 }
 
+const CUSTOM_CODE_PATTERN = /^[A-Za-z0-9]{1,32}$/
+
 export default function Landing() {
   const { user } = useAuth()
   const [longUrl, setLongUrl] = useState("")
@@ -44,10 +46,23 @@ export default function Landing() {
   const [checkingCode, setCheckingCode] = useState(false)
   const [codeAvailable, setCodeAvailable] = useState<boolean | null>(null)
 
+  const customCodeValue = customCode.trim()
+  const customCodeValid = !customCodeValue || CUSTOM_CODE_PATTERN.test(customCodeValue)
+  const customCodeBlocked = Boolean(
+    customCodeValue && (!customCodeValid || checkingCode || codeAvailable !== true),
+  )
+  const customCodePreview = customCodeValue ? `/${customCodeValue}` : ""
+
   useEffect(() => {
     const code = customCode.trim()
     if (!code) {
       setCodeAvailable(null)
+      setCheckingCode(false)
+      return
+    }
+    if (!CUSTOM_CODE_PATTERN.test(code)) {
+      setCodeAvailable(null)
+      setCheckingCode(false)
       return
     }
     const tid = setTimeout(async () => {
@@ -67,19 +82,22 @@ export default function Landing() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!longUrl.trim()) return
-    if (customCode.trim() && codeAvailable === false) {
-      toast.error("Custom code is already taken")
+    if (!customCodeValid) {
+      toast.error("Custom code must be 1-32 letters or numbers")
+      return
+    }
+    if (customCodeValue && codeAvailable !== true) {
+      toast.error(checkingCode ? "Still checking custom code" : "Custom code is not available")
       return
     }
     setLoading(true)
     try {
-      const trimmedCustom = customCode.trim()
       const link = await api.shorten({
         long_url: longUrl.trim(),
-        custom_code: trimmedCustom || undefined,
+        custom_code: customCodeValue || undefined,
         // code_length is ignored server-side when custom_code is set,
         // so only include it for auto-generated codes.
-        code_length: trimmedCustom ? undefined : CODE_LENGTHS[codeStyle],
+        code_length: customCodeValue ? undefined : CODE_LENGTHS[codeStyle],
       })
       if (!user) upsertLocalLink(link)
       setResult(link)
@@ -117,7 +135,12 @@ export default function Landing() {
               placeholder="Paste a long URL here…"
               className="sm:border-0 sm:bg-transparent sm:shadow-none sm:focus-visible:ring-0 text-base px-4"
             />
-            <Button type="submit" disabled={loading} size="lg" className="rounded-full px-6 w-full sm:w-auto">
+            <Button
+              type="submit"
+              disabled={loading || customCodeBlocked}
+              size="lg"
+              className="rounded-full px-6 w-full sm:w-auto"
+            >
               {loading ? "Shortening…" : "Shorten URL"}
             </Button>
           </div>
@@ -128,16 +151,33 @@ export default function Landing() {
               placeholder="Optional custom code (e.g. launch)"
               className="w-full sm:max-w-xs text-sm"
             />
-            {customCode.trim() && (
-              <span className="text-xs text-muted-foreground">
-                {checkingCode
-                  ? "Checking code..."
-                  : codeAvailable === null
-                    ? "Unable to verify now"
-                    : codeAvailable
-                      ? "Code is available"
-                      : "Code is already taken"}
-              </span>
+            {customCodeValue && (
+              <div className="flex flex-col items-center gap-1 text-xs sm:items-start">
+                <span className="font-mono text-muted-foreground">Preview: {customCodePreview}</span>
+                <span
+                  className={
+                    (!customCodeValid
+                      ? "text-destructive"
+                      : checkingCode
+                        ? "text-muted-foreground"
+                        : codeAvailable
+                          ? "text-emerald-600"
+                          : codeAvailable === false
+                            ? "text-destructive"
+                            : "text-muted-foreground")
+                  }
+                >
+                  {!customCodeValid
+                    ? "Use 1-32 letters or numbers only"
+                    : checkingCode
+                      ? "Checking code..."
+                      : codeAvailable === null
+                        ? "Unable to verify now"
+                        : codeAvailable
+                          ? "Code is available"
+                          : "Code is already taken"}
+                </span>
+              </div>
             )}
             <div
               role="radiogroup"
@@ -153,7 +193,7 @@ export default function Landing() {
                     role="radio"
                     aria-checked={active}
                     onClick={() => setCodeStyle(opt)}
-                    disabled={!!customCode.trim()}
+                    disabled={!!customCodeValue}
                     className={
                       "rounded-full px-3 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed " +
                       (active
