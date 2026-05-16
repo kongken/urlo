@@ -3,59 +3,123 @@
 [![Go](https://github.com/kongken/urlo/actions/workflows/go.yml/badge.svg)](https://github.com/kongken/urlo/actions/workflows/go.yml)
 [![codecov](https://codecov.io/gh/kongken/urlo/branch/main/graph/badge.svg)](https://codecov.io/gh/kongken/urlo)
 
-URL shortener with an HTTP/JSON API, a gRPC API, optional Google sign-in, and a React (Vite + TypeScript) web UI.
+**urlo** is a lightweight URL shortener for creating, managing, and tracking short links.
 
-**功能概览（与代码一致）**：短链生成（随机或自定义码、可选 TTL、可配置随机码长度）、302 跳转、访问计数、按所有者管理链接、链接更新与启用/停用、点击事件（可选 Redis Stream）、聚合分析、按 IP 的创建频率限制、内存或 S3 持久化。详细 HTTP/gRPC 约定见 [`docs/api/`](./docs/api/README.md)。
+It includes a web dashboard for everyday use and an API for automation/integration.
 
-## Features
+## What you can do
 
-- **Core**: Create short links (`POST /api/v1/urls`), resolve JSON (`GET /api/v1/urls/:code`, `…/lookup`), stats without bumping visits (`GET …/stats`), public redirect (`GET /:code`), delete (`DELETE …/:code`).
-- **Customization**: `custom_code`, `ttl_seconds`, `code_length` (6–32 for auto-generated codes); `GET /api/v1/urls/availability?code=` checks whether a custom code is free.
-- **Auth (optional)**: Google ID token exchange → HTTP-only session cookie (`POST /api/v1/auth/google`, `logout`, `me`). When Google client ID is not configured, auth routes return **503** and all links are anonymous.
-- **Ownership**: Logged-in users own new links; `GET /api/v1/urls` lists non-expired owned links. Anonymous links can be read/updated/deleted by anyone with the code; owned links require the matching session.
-- **Moderation**: `PATCH …/status` and `GET …/status` disable or re-enable a link; disabled codes return **404** on resolve/redirect but can still be inspected via stats/clicks/analytics when permitted.
-- **Clicks & analytics**: Optional Redis Streams click log; `GET …/clicks` paginates raw events; `GET …/analytics` aggregates by `day`, `country`, or `referer` (country uses `(unknown)` when empty in the event).
-- **Infra**: [Butterfly](https://butterfly.orx.me/core) app bootstrap (`cmd/urlo`), YAML config (`config.yaml`) for `base_url`, `code_length`, `storage` (memory or S3), `rate_limit`, `auth`, `clicks`.
-- **Web UI** (`front/`): landing shorten flow, dashboard (my links), per-link analytics, settings (API base URL override in `localStorage`).
+- Create short links from long URLs
+- Choose an optional custom short code
+- Set links to expire after a period of time, or keep them forever
+- Copy and share generated short links and QR codes
+- Manage your links from a dashboard
+- Enable, disable, edit, or delete links
+- View click analytics such as trends, referrers, browsers, devices, and locations
+- Use local browser storage anonymously, or sign in when auth is configured
 
-## Repository layout
+## Quick start
 
-| Path | Role |
-|------|------|
-| `cmd/urlo` | Service entrypoint (HTTP + gRPC registration) |
-| `internal/http` | Gin routes, JSON DTOs, auth wiring |
-| `internal/url` | Domain logic and store abstraction |
-| `internal/clicks` | Click capture + UA enrichment |
-| `proto/urlo/v1` | Protobuf API (gRPC subset) |
-| `pkg/proto/urlo/v1` | Generated Go protobuf / Connect code |
-| `front/` | Vite + React SPA |
-| `docs/api/` | HTTP/gRPC API reference |
-
-## Quick start (local)
+Run the backend service:
 
 ```bash
 make run
 ```
 
-Uses `BUTTERFLY_CONFIG_FILE_PATH=./config.yaml` (see `Makefile`). Defaults: in-memory store, no auth, no click logging.
+By default, urlo uses the local [config.yaml](config.yaml). The default setup is suitable for local development: in-memory storage, no login requirement, and no external click-log service.
 
-**gRPC / second port**: Exposed by the Butterfly runtime alongside HTTP (commonly HTTP `8080` and gRPC `9090` in examples—confirm in your deployment).
-
-**Web UI**: From `front/`, install deps and run the dev server; set `VITE_API_BASE_URL` to the API origin (or use Settings → API base URL in the app).
+Then start the web app:
 
 ```bash
-cd front && pnpm install && pnpm dev
+cd front
+pnpm install
+pnpm dev
 ```
 
-## API reference
+Open the Vite dev URL shown in the terminal. If the frontend and backend are on different origins, set the API base URL in either of these ways:
 
-See [`docs/api/`](./docs/api/README.md) for routes, payloads, auth rules, rate limiting, and gRPC coverage.
+- Environment variable before building/running the frontend: `VITE_API_BASE_URL=http://localhost:8080`
+- In the app: **Settings → API Base URL**
+
+## Basic usage
+
+### Create a short link
+
+1. Open the web app.
+2. Paste a long URL.
+3. Optionally enter a custom code.
+4. Click **Shorten URL**.
+5. Copy the generated link or download/share the QR code.
+
+### Manage links
+
+Go to **Dashboard** to:
+
+- Search your links
+- Refresh click counts
+- Edit the destination URL
+- Change expiration settings
+- Enable or disable a link
+- Delete one or multiple links
+
+### View analytics
+
+Open **Analytics** from a link to inspect:
+
+- Total and recent clicks
+- Daily trend
+- Top referrers
+- Browsers and devices
+- Location breakdown when available
+
+You can filter analytics by all time, last 24 hours, last 7 days, or last 30 days.
+
+### Local data
+
+When using urlo without signing in, created links are saved in the browser. In **Settings**, you can:
+
+- Export local links as JSON
+- Import a previous export
+- Clear locally stored links
+- Test the configured API connection
+
+## Configuration
+
+Most deployments only need to adjust [config.yaml](config.yaml):
+
+- `base_url` — public URL used when generating short links
+- `storage` — in-memory storage for local/dev, or S3-compatible storage for persistence
+- `auth` — optional Google sign-in
+- `clicks` — optional click-event logging
+- `rate_limit` — optional link-creation rate limiting
+
+See comments and examples in [config.yaml](config.yaml) for the available settings.
+
+## API
+
+For integrations and automation, see the API documentation:
+
+- [API overview](docs/api/README.md)
+- [Auth](docs/api/auth.md)
+- [URLs](docs/api/urls.md)
+- [Clicks and analytics](docs/api/clicks.md)
+- [Redirect behavior](docs/api/redirect.md)
+- [gRPC](docs/api/grpc.md)
 
 ## Development
 
-- `make proto` — regenerate Go code from protos (`buf generate`).
-- `make build` — compile to `bin/urlo`.
-- Backend checks: `go test ./...`.
-- Frontend checks: `cd front && pnpm lint && pnpm build`.
+Common checks:
 
-Note: [front/go.mod](front/go.mod) is an intentional Go module boundary so root-level Go commands do not traverse frontend dependencies such as `node_modules`.
+```bash
+go test ./...
+cd front && pnpm lint && pnpm build
+```
+
+Other useful commands:
+
+```bash
+make build   # build backend binary
+make proto   # regenerate protobuf code
+```
+
+The frontend lives in [front/](front/). Its [front/go.mod](front/go.mod) file is intentional: it keeps root-level Go commands from scanning frontend dependencies such as `node_modules`.
