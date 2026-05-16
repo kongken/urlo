@@ -15,7 +15,7 @@ Built on the `butterfly.orx.me/core` app framework (provides config loading, HTT
 
 ```
 cmd/urlo/             # main entrypoint; wires app.Config + builds storage
-internal/config/      # ServiceConfig: BaseURL, StorageConfig, etc.
+front/                # React frontend; has its own go.mod only as a module boundary for Go tooling
 internal/http/        # Gin REST routes (delegates to url.Service)
 internal/url/         # Core URL service: Service, Store interface
 internal/url/s3store/ # S3-backed Store implementation
@@ -51,6 +51,7 @@ changing an endpoint, update the matching file (and the index table in
 - **Storage drivers** are pluggable via `url.Store` interface. Adding a new backend: implement `Store` (see `internal/url/memory.go`, `internal/url/s3store/`), then wire it into `buildStore` in `cmd/urlo/main.go` with a new `driver` value.
 - **S3 client** comes from `butterfly.orx.me/core/store/s3` — configured under `store.s3.<name>` in `config.yaml`, referenced by `storage.s3.config_name`.
 - **Proto changes**: edit files under `proto/urlo/v1/`, then `make proto`. Do not hand-edit files under `pkg/proto/`.
+- **Frontend boundary**: `front/go.mod` is intentional. It keeps root-level Go commands such as `go test ./...` from traversing `front/node_modules`; do not remove it unless the frontend is moved outside the root Go module.
 - **Tests**: prefer table-driven tests. `s3store` tests use a mockable S3 interface — keep the interface minimal so mocks stay easy.
 - **Go version**: 1.26 (see `go.mod`). The Dockerfile and CI both pin to 1.26.
 

@@ -57,3 +57,5 @@ See [`docs/api/`](./docs/api/README.md) for routes, payloads, auth rules, rate l
 - `make build` — compile to `bin/urlo`.
 - Backend checks: `go test ./...`.
 - Frontend checks: `cd front && pnpm lint && pnpm build`.
+
+Note: [front/go.mod](front/go.mod) is an intentional Go module boundary so root-level Go commands do not traverse frontend dependencies such as `node_modules`.
