@@ -40,7 +40,7 @@ store:
       use_path_style: false
 
 # ----------------------------------------------------------------------
-# Per-IP rate limiting on URL creation (POST /api/v1/urls).
+# Per-IP rate limiting on public API endpoints.
 # Requires a redis client configured under `store.redis.<name>`.
 # ----------------------------------------------------------------------
 rate_limit:

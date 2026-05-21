@@ -91,7 +91,7 @@ Most deployments only need to adjust [config.yaml](config.yaml):
 - `storage` — in-memory storage for local/dev, or S3-compatible storage for persistence
 - `auth` — optional Google sign-in
 - `clicks` — optional click-event logging
-- `rate_limit` — optional link-creation rate limiting
+- `rate_limit` — optional public API rate limiting
 
 See comments and examples in [config.yaml](config.yaml) for the available settings.
 

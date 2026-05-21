@@ -26,13 +26,13 @@ func main() {
 	svcConfig := &config.ServiceConfig{}
 	urlSvc := url.NewService(url.Options{})
 	var (
-		shortenLimiter *ratelimit.Limiter
-		verifier       auth.Verifier
-		sessions       auth.Sessions
-		cookieName     string
-		cookieSecure   bool
-		cookieTTL      time.Duration
-		clickIPSalt    string
+		apiLimiter   *ratelimit.Limiter
+		verifier     auth.Verifier
+		sessions     auth.Sessions
+		cookieName   string
+		cookieSecure bool
+		cookieTTL    time.Duration
+		clickIPSalt  string
 	)
 
 	appConfig := &app.Config{
@@ -44,7 +44,7 @@ func main() {
 				c.JSON(200, gin.H{"message": "pong"})
 			})
 			apihttp.RegisterRoutes(r, urlSvc,
-				apihttp.WithShortenLimiter(shortenLimiter),
+				apihttp.WithAPILimiter(apiLimiter),
 				apihttp.WithAuth(verifier, sessions, cookieName, cookieSecure, cookieTTL),
 				apihttp.WithIPHashSalt(clickIPSalt),
 			)
@@ -64,13 +64,13 @@ func main() {
 				urlSvc.SetStore(store)
 				slog.Info("url service ready", "store", svcConfig.Storage.Driver)
 
-				l, err := buildShortenLimiter(svcConfig.RateLimit)
+				l, err := buildAPILimiter(svcConfig.RateLimit)
 				if err != nil {
 					return fmt.Errorf("build rate limiter: %w", err)
 				}
 				if l != nil {
-					shortenLimiter = l
-					slog.Info("shorten rate limit enabled",
+					apiLimiter = l
+					slog.Info("api rate limit enabled",
 						"per_hour", svcConfig.RateLimit.PerHour,
 						"redis", svcConfig.RateLimit.RedisConfigName)
 				}
@@ -125,7 +125,7 @@ func buildAuth(c config.AuthConfig) (auth.Verifier, auth.Sessions, string, bool,
 	return auth.NewGoogleVerifier(c.Google.ClientID), sess, cookieName, c.Session.Secure, time.Duration(ttlHours) * time.Hour, nil
 }
 
-func buildShortenLimiter(c config.RateLimitConfig) (*ratelimit.Limiter, error) {
+func buildAPILimiter(c config.RateLimitConfig) (*ratelimit.Limiter, error) {
 	if !c.Enabled {
 		return nil, nil
 	}
@@ -139,7 +139,7 @@ func buildShortenLimiter(c config.RateLimitConfig) (*ratelimit.Limiter, error) {
 	if client == nil {
 		return nil, fmt.Errorf("redis client %q not found in butterfly store config", c.RedisConfigName)
 	}
-	return ratelimit.New(client, "urlo:ratelimit:shorten", c.PerHour), nil
+	return ratelimit.New(client, "urlo:ratelimit:api", c.PerHour), nil
 }
 
 func buildClickRecorder(c config.ClicksConfig) (clicks.Recorder, error) {
