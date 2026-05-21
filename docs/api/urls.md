@@ -28,7 +28,8 @@ Create a new short link. The server generates a 6-char code unless
 `custom_code` is provided. When the caller is authenticated, the new
 link is tagged with their `sub` as owner.
 
-Subject to per-IP rate limiting when `rate_limit.enabled = true`.
+Public API endpoints are subject to per-IP rate limiting when
+`rate_limit.enabled = true`.
 Limited callers receive **429** with `Retry-After`.
 
 **Request body**

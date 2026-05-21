@@ -111,6 +111,7 @@ func toClickEventDTO(e *urlov1.ClickEvent) clickEventDTO {
 //	GET    /api/v1/auth/me             -> current user (200 / 401)
 //	GET    /api/v1/urls                -> list current user's links (auth required)
 //	POST   /api/v1/urls                -> Shorten (anonymous OK; tags owner if logged in)
+//	GET    /api/v1/urls/availability   -> check custom-code availability
 //	GET    /api/v1/urls/:code          -> Resolve
 //	GET    /api/v1/urls/:code/stats    -> GetStats (owner-checked if owned)
 //	GET    /api/v1/urls/:code/clicks   -> ListClicks (owner-checked if owned)
@@ -136,11 +137,11 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 
 	// Auth endpoints
 	if o.verifier != nil && o.sessions != nil && o.cookieName != "" {
-		api.POST("/auth/google", handleGoogleLogin(o))
+		api.POST("/auth/google", o.apiLimited("auth_google", handleGoogleLogin(o))...)
 		api.POST("/auth/logout", handleLogout(o))
 		api.GET("/auth/me", handleMe())
 	} else {
-		api.POST("/auth/google", handleAuthDisabled)
+		api.POST("/auth/google", o.apiLimited("auth_google", handleAuthDisabled)...)
 		api.POST("/auth/logout", handleAuthDisabled)
 		api.GET("/auth/me", handleAuthDisabled)
 	}
@@ -148,24 +149,18 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 	// User links (requires auth)
 	api.GET("/urls", requireAuth(), handleListMine(svc))
 
-	// Shorten
-	shorten := []gin.HandlerFunc{}
-	if o.shortenLimiter != nil {
-		shorten = append(shorten, rateLimitMiddleware(o.shortenLimiter, "shorten"))
-	}
-	shorten = append(shorten, handleShorten(svc))
-	api.POST("/urls", shorten...)
+	api.POST("/urls", o.apiLimited("shorten", handleShorten(svc))...)
 
-	api.GET("/urls/:code", handleResolve(svc))
-	api.GET("/urls/:code/lookup", handleLookup(svc))
-	api.GET("/urls/:code/stats", handleGetStats(svc))
-	api.GET("/urls/:code/analytics", handleAnalytics(svc))
-	api.GET("/urls/:code/clicks", handleListClicks(svc))
-	api.GET("/urls/:code/status", handleGetStatus(svc))
-	api.PATCH("/urls/:code", handleUpdate(svc))
-	api.PATCH("/urls/:code/status", handleStatus(svc))
-	api.DELETE("/urls/:code", handleDelete(svc))
-	api.GET("/urls/availability", handleAvailability(svc))
+	api.GET("/urls/availability", o.apiLimited("availability", handleAvailability(svc))...)
+	api.GET("/urls/:code", o.apiLimited("resolve", handleResolve(svc))...)
+	api.GET("/urls/:code/lookup", o.apiLimited("lookup", handleLookup(svc))...)
+	api.GET("/urls/:code/stats", o.apiLimited("stats", handleGetStats(svc))...)
+	api.GET("/urls/:code/analytics", o.apiLimited("analytics", handleAnalytics(svc))...)
+	api.GET("/urls/:code/clicks", o.apiLimited("clicks", handleListClicks(svc))...)
+	api.GET("/urls/:code/status", o.apiLimited("get_status", handleGetStatus(svc))...)
+	api.PATCH("/urls/:code", o.apiLimited("update", handleUpdate(svc))...)
+	api.PATCH("/urls/:code/status", o.apiLimited("status", handleStatus(svc))...)
+	api.DELETE("/urls/:code", o.apiLimited("delete", handleDelete(svc))...)
 
 	r.GET("/:code", handleRedirect(svc, o.ipHashSalt))
 }
@@ -174,13 +169,13 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 type Option func(*options)
 
 type options struct {
-	shortenLimiter *ratelimit.Limiter
-	verifier       auth.Verifier
-	sessions       auth.Sessions
-	cookieName     string
-	cookieSecure   bool
-	cookieTTL      time.Duration
-	ipHashSalt     string
+	apiLimiter   *ratelimit.Limiter
+	verifier     auth.Verifier
+	sessions     auth.Sessions
+	cookieName   string
+	cookieSecure bool
+	cookieTTL    time.Duration
+	ipHashSalt   string
 }
 
 // WithIPHashSalt sets the salt mixed into hashed client IPs in click
@@ -189,9 +184,16 @@ func WithIPHashSalt(salt string) Option {
 	return func(o *options) { o.ipHashSalt = salt }
 }
 
-// WithShortenLimiter applies a per-IP rate limiter to POST /api/v1/urls.
+// WithAPILimiter applies a per-IP rate limiter to public API endpoints.
+func WithAPILimiter(l *ratelimit.Limiter) Option {
+	return func(o *options) { o.apiLimiter = l }
+}
+
+// WithShortenLimiter applies a per-IP rate limiter to public API endpoints.
+//
+// Deprecated: use WithAPILimiter.
 func WithShortenLimiter(l *ratelimit.Limiter) Option {
-	return func(o *options) { o.shortenLimiter = l }
+	return WithAPILimiter(l)
 }
 
 // WithAuth wires Google login + session-cookie auth into the API. When
@@ -204,6 +206,16 @@ func WithAuth(v auth.Verifier, s auth.Sessions, cookieName string, cookieSecure 
 		o.cookieSecure = cookieSecure
 		o.cookieTTL = cookieTTL
 	}
+}
+
+func (o options) apiLimited(scope string, handlers ...gin.HandlerFunc) []gin.HandlerFunc {
+	if o.apiLimiter == nil {
+		return handlers
+	}
+	out := make([]gin.HandlerFunc, 0, len(handlers)+1)
+	out = append(out, rateLimitMiddleware(o.apiLimiter, scope))
+	out = append(out, handlers...)
+	return out
 }
 
 func rateLimitMiddleware(l *ratelimit.Limiter, scope string) gin.HandlerFunc {

@@ -1,5 +1,5 @@
 // Package ratelimit wraps github.com/go-redis/redis_rate as a thin
-// per-IP limiter for URL creation.
+// per-IP limiter for API requests.
 package ratelimit
 
 import (

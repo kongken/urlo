@@ -3,16 +3,16 @@ package config
 import "log/slog"
 
 type ServiceConfig struct {
-	Environment string          `yaml:"environment"`
-	BaseURL     string          `yaml:"base_url"`
+	Environment string `yaml:"environment"`
+	BaseURL     string `yaml:"base_url"`
 	// CodeLength sets the length of randomly generated short codes.
 	// Values below the built-in minimum (6) are raised to 6; values
 	// above 32 are clamped to 32. 0 (default) keeps the built-in default.
-	CodeLength  int             `yaml:"code_length"`
-	Storage     StorageConfig   `yaml:"storage"`
-	RateLimit   RateLimitConfig `yaml:"rate_limit"`
-	Auth        AuthConfig      `yaml:"auth"`
-	Clicks      ClicksConfig    `yaml:"clicks"`
+	CodeLength int             `yaml:"code_length"`
+	Storage    StorageConfig   `yaml:"storage"`
+	RateLimit  RateLimitConfig `yaml:"rate_limit"`
+	Auth       AuthConfig      `yaml:"auth"`
+	Clicks     ClicksConfig    `yaml:"clicks"`
 }
 
 // ClicksConfig configures click-event logging.
@@ -54,10 +54,10 @@ type SessionConfig struct {
 	Secure     bool   `yaml:"secure"`
 }
 
-// RateLimitConfig configures per-IP rate limiting on URL creation.
+// RateLimitConfig configures per-IP rate limiting on public API endpoints.
 //
-// When Enabled is true, the service enforces at most PerHour shorten
-// requests per client IP per hour using the butterfly redis client
+// When Enabled is true, the service enforces at most PerHour requests
+// per client IP, endpoint scope, and hour using the butterfly redis client
 // identified by RedisConfigName.
 type RateLimitConfig struct {
 	Enabled         bool   `yaml:"enabled"`
