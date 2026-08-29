@@ -1,16 +1,16 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+RUN corepack enable
 
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 # Build-time public env (inlined by Vite into the bundle).
 # Override with: docker build --build-arg VITE_GOOGLE_CLIENT_ID=...
 #
 # Vite only reads VITE_* from .env* files, not from process.env, so we
-# must materialise the value into .env.production before `yarn build`.
+# must materialise the value into .env.production before `pnpm build`.
 ARG VITE_GOOGLE_CLIENT_ID=""
 
 COPY . .
@@ -24,7 +24,7 @@ RUN echo "[build] VITE_GOOGLE_CLIENT_ID length=${#VITE_GOOGLE_CLIENT_ID}" \
       echo "[build] wrote .env.production ($(wc -c < .env.production) bytes)"; \
     fi
 
-RUN yarn build
+RUN pnpm build
 
 # Verify the value made it into the bundle.
 RUN echo "[post-build] grep googleusercontent.com in dist/assets:" \
