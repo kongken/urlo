@@ -5,6 +5,7 @@ import Landing from "@/pages/Landing"
 import Dashboard from "@/pages/Dashboard"
 import Analytics from "@/pages/Analytics"
 import Settings from "@/pages/Settings"
+import ApiDocs from "@/pages/ApiDocs"
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="analytics" element={<Analytics />} />
           <Route path="analytics/:code" element={<Analytics />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="api-docs" element={<ApiDocs />} />
         </Route>
       </Routes>
       <Toaster richColors />
