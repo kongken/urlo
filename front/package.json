@@ -3,11 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.15.1",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "msw"
+    ]
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

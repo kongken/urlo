@@ -9,6 +9,7 @@ const navItems = [
   { to: "/dashboard", label: "My Links" },
   { to: "/analytics", label: "Analytics" },
   { to: "/settings", label: "Settings" },
+  { to: "/api-docs", label: "API Docs" },
 ]
 
 export function Layout() {
