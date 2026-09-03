@@ -9,6 +9,8 @@ session cookie (default name `urlo_session`).
 
 - Endpoints that **require** auth: `GET /api/v1/urls`. Missing/invalid
   cookie → **401**.
+- Public endpoints with no ownership requirement: `POST /api/v1/expand` and
+  `POST /api/v1/urls`.
 - Endpoints with **optional** ownership: `POST /api/v1/urls`,
   `GET /api/v1/urls/:code/stats`, `GET /api/v1/urls/:code/clicks`,
   `GET /api/v1/urls/:code/analytics`, `PATCH /api/v1/urls/:code`,
@@ -18,6 +20,7 @@ session cookie (default name `urlo_session`).
   - Mismatch (owner set, caller is anonymous or different user): **403**.
 - Anonymous `POST /api/v1/urls` creates an owner-less link that anyone
   can view, edit, or delete by code.
+- `POST /api/v1/expand` does not persist URLs or associate them with a user.
 
 `User` payload returned by `/auth/me` and `/auth/google`:
 

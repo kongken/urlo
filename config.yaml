@@ -1,6 +1,12 @@
 environment: "local"
 base_url: "http://localhost:8080"
 
+# External URL expansion. The service follows public HTTP redirects only.
+# Values are bounded by the backend; zero uses the built-in default.
+expander:
+  timeout_seconds: 10
+  max_redirects: 10
+
 # Length of randomly-generated short codes.
 # Minimum (and default) is 6; clamped to 32 maximum.
 code_length: 6

@@ -14,6 +14,7 @@ import (
 	"github.com/kongken/urlo/internal/clicks"
 	clicksredis "github.com/kongken/urlo/internal/clicks/redisstream"
 	"github.com/kongken/urlo/internal/config"
+	"github.com/kongken/urlo/internal/expander"
 	apihttp "github.com/kongken/urlo/internal/http"
 	"github.com/kongken/urlo/internal/ratelimit"
 	"github.com/kongken/urlo/internal/url"
@@ -25,6 +26,7 @@ import (
 func main() {
 	svcConfig := &config.ServiceConfig{}
 	urlSvc := url.NewService(url.Options{})
+	urlExpander := expander.New(expander.Options{})
 	var (
 		apiLimiter   *ratelimit.Limiter
 		verifier     auth.Verifier
@@ -47,6 +49,7 @@ func main() {
 				apihttp.WithAPILimiter(apiLimiter),
 				apihttp.WithAuth(verifier, sessions, cookieName, cookieSecure, cookieTTL),
 				apihttp.WithIPHashSalt(clickIPSalt),
+				apihttp.WithExpander(urlExpander),
 			)
 		},
 		GRPCRegister: func(s *grpc.Server) {
@@ -56,6 +59,13 @@ func main() {
 			func() error {
 				urlSvc.SetBaseURL(svcConfig.BaseURL)
 				urlSvc.SetCodeLength(svcConfig.CodeLength)
+				urlExpander = expander.New(expander.Options{
+					Timeout:      time.Duration(svcConfig.Expander.TimeoutSeconds) * time.Second,
+					MaxRedirects: svcConfig.Expander.MaxRedirects,
+				})
+				slog.Info("url expander ready",
+					"timeout_seconds", svcConfig.Expander.TimeoutSeconds,
+					"max_redirects", svcConfig.Expander.MaxRedirects)
 				slog.Info("code length configured", "length", urlSvc.CodeLength())
 				store, err := buildStore(svcConfig.Storage)
 				if err != nil {

@@ -6,6 +6,7 @@ import { UserMenu } from "@/components/UserMenu"
 
 const navItems = [
   { to: "/", label: "Home", end: true },
+  { to: "/expand", label: "URL Restore" },
   { to: "/dashboard", label: "My Links" },
   { to: "/analytics", label: "Analytics" },
   { to: "/settings", label: "Settings" },

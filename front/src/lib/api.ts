@@ -19,6 +19,20 @@ export interface ShortenRequest {
   code_length?: number
 }
 
+export interface URLRedirect {
+  url: string
+  status_code: number
+  location: string
+}
+
+export interface ExpandResult {
+  input_url: string
+  final_url: string
+  status_code: number
+  redirect_count: number
+  redirects: URLRedirect[]
+}
+
 function getBaseUrl(): string {
   const override =
     typeof localStorage !== "undefined"
@@ -109,6 +123,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     })
+  },
+  expand(url: string) {
+    return request<ExpandResult>("/api/v1/expand", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }).then((result) => ({
+      ...result,
+      redirects: result.redirects ?? [],
+    }))
   },
   stats(code: string) {
     return request<ShortLink>(`/api/v1/urls/${encodeURIComponent(code)}/stats`)

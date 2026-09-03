@@ -221,6 +221,49 @@ const groups: Group[] = [
     ],
   },
   {
+    id: "expand",
+    title: "URL expansion",
+    description:
+      "Follow public HTTP redirects and reveal a third-party URL's final destination. URLs are not persisted.",
+    endpoints: [
+      {
+        method: "POST",
+        path: "/api/v1/expand",
+        title: "Restore a third-party URL",
+        auth: "public",
+        description:
+          "Follow 301, 302, 303, 307, and 308 redirects. The server validates every target and returns the final response status.",
+        paramsLabel: "Request body",
+        params: [
+          {
+            name: "url",
+            type: "string",
+            required: true,
+            notes: "Absolute http or https URL",
+          },
+        ],
+        curl: `curl -X POST ${"BASE"}/api/v1/expand \\
+  -H 'Content-Type: application/json' \\
+  -d '{"url":"https://bit.ly/example"}'`,
+        response: {
+          title: "200 OK",
+          body: `{
+  "input_url": "https://bit.ly/example",
+  "final_url": "https://example.com/article?id=123",
+  "status_code": 200,
+  "redirect_count": 2,
+  "redirects": [
+    { "url": "https://bit.ly/example", "status_code": 301, "location": "https://example.com/step-1" },
+    { "url": "https://example.com/step-1", "status_code": 302, "location": "https://example.com/article?id=123" }
+  ]
+}`,
+        },
+        errors:
+          "400 (invalid URL or unsupported redirect chain), 403 (target blocked), 429 (rate-limited), 503 (upstream unavailable), 504 (timeout)",
+      },
+    ],
+  },
+  {
     id: "urls",
     title: "URLs",
     description:

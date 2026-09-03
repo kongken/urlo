@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/kongken/urlo/internal/auth"
 	"github.com/kongken/urlo/internal/clicks"
+	"github.com/kongken/urlo/internal/expander"
 	"github.com/kongken/urlo/internal/ratelimit"
 	"github.com/kongken/urlo/internal/url"
 	urlov1 "github.com/kongken/urlo/pkg/proto/urlo/v1"
@@ -109,6 +111,7 @@ func toClickEventDTO(e *urlov1.ClickEvent) clickEventDTO {
 //	POST   /api/v1/auth/google         -> exchange Google ID token for session cookie
 //	POST   /api/v1/auth/logout         -> clear session cookie
 //	GET    /api/v1/auth/me             -> current user (200 / 401)
+//	POST   /api/v1/expand               -> expand a public third-party URL
 //	GET    /api/v1/urls                -> list current user's links (auth required)
 //	POST   /api/v1/urls                -> Shorten (anonymous OK; tags owner if logged in)
 //	GET    /api/v1/urls/availability   -> check custom-code availability
@@ -121,6 +124,9 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 	o := options{}
 	for _, fn := range opts {
 		fn(&o)
+	}
+	if o.externalExpander == nil {
+		o.externalExpander = expander.New(expander.Options{})
 	}
 
 	r.GET("/health", func(c *gin.Context) {
@@ -146,6 +152,8 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 		api.GET("/auth/me", handleAuthDisabled)
 	}
 
+	api.POST("/expand", o.apiLimited("expand", handleExpand(o.externalExpander))...)
+
 	// User links (requires auth)
 	api.GET("/urls", requireAuth(), handleListMine(svc))
 
@@ -169,13 +177,14 @@ func RegisterRoutes(r *gin.Engine, svc *url.Service, opts ...Option) {
 type Option func(*options)
 
 type options struct {
-	apiLimiter   *ratelimit.Limiter
-	verifier     auth.Verifier
-	sessions     auth.Sessions
-	cookieName   string
-	cookieSecure bool
-	cookieTTL    time.Duration
-	ipHashSalt   string
+	apiLimiter       *ratelimit.Limiter
+	verifier         auth.Verifier
+	sessions         auth.Sessions
+	cookieName       string
+	cookieSecure     bool
+	cookieTTL        time.Duration
+	ipHashSalt       string
+	externalExpander *expander.Expander
 }
 
 // WithIPHashSalt sets the salt mixed into hashed client IPs in click
@@ -206,6 +215,12 @@ func WithAuth(v auth.Verifier, s auth.Sessions, cookieName string, cookieSecure 
 		o.cookieSecure = cookieSecure
 		o.cookieTTL = cookieTTL
 	}
+}
+
+// WithExpander sets the client used by the public URL expansion endpoint.
+// Passing nil restores the default SSRF-safe client.
+func WithExpander(e *expander.Expander) Option {
+	return func(o *options) { o.externalExpander = e }
 }
 
 func (o options) apiLimited(scope string, handlers ...gin.HandlerFunc) []gin.HandlerFunc {
@@ -319,6 +334,40 @@ type shortenRequest struct {
 	CodeLength int32  `json:"code_length,omitempty"`
 }
 
+type expandRequest struct {
+	URL string `json:"url"`
+}
+
+const maxExpandRequestBody = 16 << 10
+
+func handleExpand(e *expander.Expander) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxExpandRequestBody)
+		var body expandRequest
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   codes.InvalidArgument.String(),
+				"message": "request body must contain a valid url field",
+			})
+			return
+		}
+		if strings.TrimSpace(body.URL) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   codes.InvalidArgument.String(),
+				"message": "url is required",
+			})
+			return
+		}
+
+		result, err := e.Expand(c.Request.Context(), body.URL)
+		if err != nil {
+			writeExpandError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	}
+}
+
 func handleShorten(svc *url.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body shortenRequest
@@ -344,6 +393,41 @@ func handleShorten(svc *url.Service) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusCreated, toShortLinkDTO(resp.GetLink()))
+	}
+}
+
+func writeExpandError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, expander.ErrInvalidURL):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   codes.InvalidArgument.String(),
+			"message": "url must be an absolute http or https URL",
+		})
+	case errors.Is(err, expander.ErrInvalidRedirect):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   codes.InvalidArgument.String(),
+			"message": "the target returned an invalid redirect",
+		})
+	case errors.Is(err, expander.ErrBlockedURL):
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   codes.PermissionDenied.String(),
+			"message": "the target URL is blocked by the server network policy",
+		})
+	case errors.Is(err, expander.ErrTooManyRedirects), errors.Is(err, expander.ErrRedirectLoop):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   codes.InvalidArgument.String(),
+			"message": "the URL redirect chain is not supported",
+		})
+	case errors.Is(err, expander.ErrTimeout), errors.Is(err, context.DeadlineExceeded):
+		c.JSON(http.StatusGatewayTimeout, gin.H{
+			"error":   codes.DeadlineExceeded.String(),
+			"message": "timed out while fetching the target URL",
+		})
+	default:
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   codes.Unavailable.String(),
+			"message": "unable to fetch the target URL",
+		})
 	}
 }
 
