@@ -3,8 +3,9 @@ package config
 import "log/slog"
 
 type ServiceConfig struct {
-	Environment string `yaml:"environment"`
-	BaseURL     string `yaml:"base_url"`
+	Environment string         `yaml:"environment"`
+	BaseURL     string         `yaml:"base_url"`
+	Expander    ExpanderConfig `yaml:"expander"`
 	// CodeLength sets the length of randomly generated short codes.
 	// Values below the built-in minimum (6) are raised to 6; values
 	// above 32 are clamped to 32. 0 (default) keeps the built-in default.
@@ -13,6 +14,13 @@ type ServiceConfig struct {
 	RateLimit  RateLimitConfig `yaml:"rate_limit"`
 	Auth       AuthConfig      `yaml:"auth"`
 	Clicks     ClicksConfig    `yaml:"clicks"`
+}
+
+// ExpanderConfig configures requests made while expanding third-party URLs.
+// Zero values use the expander package defaults.
+type ExpanderConfig struct {
+	TimeoutSeconds int `yaml:"timeout_seconds"`
+	MaxRedirects   int `yaml:"max_redirects"`
 }
 
 // ClicksConfig configures click-event logging.
@@ -88,6 +96,8 @@ func (c *ServiceConfig) Print() {
 		"environment", c.Environment,
 		"base_url", c.BaseURL,
 		"code_length", c.CodeLength,
+		"expand_timeout_seconds", c.Expander.TimeoutSeconds,
+		"expand_max_redirects", c.Expander.MaxRedirects,
 		"storage_driver", c.Storage.Driver,
 	)
 }

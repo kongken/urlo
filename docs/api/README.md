@@ -13,6 +13,7 @@ gRPC API (port `9090`); both are backed by the same `urlo.v1.UrlService`.
 |-----|--------|
 | [Conventions](./conventions.md) | `ShortLink` / `ClickEvent` shapes, error format, gRPC→HTTP status mapping |
 | [Auth](./auth.md) | Authentication model + `/api/v1/auth/*` endpoints |
+| [URL expansion](./expand.md) | `/api/v1/expand` — restore a third-party URL |
 | [URLs](./urls.md) | `/api/v1/urls*` — list, shorten, resolve, stats, update, status, availability, delete |
 | [Clicks & analytics](./clicks.md) | `/clicks` event log + `/analytics` aggregations |
 | [Redirect & health](./redirect.md) | `GET /:code` public redirect, `GET /health` |
@@ -26,6 +27,7 @@ gRPC API (port `9090`); both are backed by the same `urlo.v1.UrlService`.
 | `POST` | `/api/v1/auth/google` | Exchange Google ID token for session |
 | `POST` | `/api/v1/auth/logout` | Clear session |
 | `GET`  | `/api/v1/auth/me` | Current user |
+| `POST` | `/api/v1/expand` | Restore a third-party URL |
 | `GET`  | `/api/v1/urls` | List my links |
 | `POST` | `/api/v1/urls` | Shorten |
 | `GET`  | `/api/v1/urls/availability` | Check custom code availability |

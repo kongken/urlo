@@ -3,12 +3,16 @@ package http
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kongken/urlo/internal/expander"
 	"github.com/kongken/urlo/internal/url"
 )
 
@@ -58,6 +62,119 @@ func TestHealth(t *testing.T) {
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+type expandRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f expandRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func expandResponse(req *http.Request, statusCode int, location string) *http.Response {
+	header := make(http.Header)
+	if location != "" {
+		header.Set("Location", location)
+	}
+	return &http.Response{
+		StatusCode: statusCode,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader("ignored")),
+		Request:    req,
+	}
+}
+
+func TestExpandEndpoint(t *testing.T) {
+	client := &http.Client{
+		Transport: expandRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.String() {
+			case "https://short.com/a":
+				return expandResponse(req, http.StatusFound, "/b"), nil
+			case "https://short.com/b":
+				return expandResponse(req, http.StatusOK, ""), nil
+			default:
+				return nil, errors.New("unexpected URL")
+			}
+		}),
+	}
+	r := gin.New()
+	RegisterRoutes(r, url.NewService(url.Options{}), WithExpander(expander.New(expander.Options{
+		HTTPClient:   client,
+		MaxRedirects: 3,
+	})))
+
+	rr := doJSON(t, r, http.MethodPost, "/api/v1/expand", map[string]any{
+		"url": "https://short.com/a",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("Expand: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		InputURL      string `json:"input_url"`
+		FinalURL      string `json:"final_url"`
+		StatusCode    int    `json:"status_code"`
+		RedirectCount int    `json:"redirect_count"`
+	}
+	got = decode[struct {
+		InputURL      string `json:"input_url"`
+		FinalURL      string `json:"final_url"`
+		StatusCode    int    `json:"status_code"`
+		RedirectCount int    `json:"redirect_count"`
+	}](t, rr)
+	if got.InputURL != "https://short.com/a" || got.FinalURL != "https://short.com/b" {
+		t.Fatalf("URLs = %q -> %q", got.InputURL, got.FinalURL)
+	}
+	if got.StatusCode != http.StatusOK || got.RedirectCount != 1 {
+		t.Fatalf("status/count = %d/%d", got.StatusCode, got.RedirectCount)
+	}
+}
+
+func TestExpandEndpointErrors(t *testing.T) {
+	r, _ := newTestRouter()
+
+	cases := []struct {
+		name string
+		body any
+		want int
+	}{
+		{name: "missing URL", body: map[string]any{}, want: http.StatusBadRequest},
+		{name: "blocked URL", body: map[string]any{"url": "http://127.0.0.1/"}, want: http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := doJSON(t, r, http.MethodPost, "/api/v1/expand", tc.body)
+			if rr.Code != tc.want {
+				t.Errorf("status=%d body=%s, want %d", rr.Code, rr.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestExpandEndpointUpstreamError(t *testing.T) {
+	r := gin.New()
+	client := &http.Client{
+		Transport: expandRoundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("connection refused")
+		}),
+	}
+	RegisterRoutes(r, url.NewService(url.Options{}), WithExpander(expander.New(expander.Options{
+		HTTPClient: client,
+	})))
+
+	rr := doJSON(t, r, http.MethodPost, "/api/v1/expand", map[string]any{
+		"url": "https://short.com/a",
+	})
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	got = decode[struct {
+		Error string `json:"error"`
+	}](t, rr)
+	if got.Error != "Unavailable" {
+		t.Errorf("error=%q, want Unavailable", got.Error)
 	}
 }
 

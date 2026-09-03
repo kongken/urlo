@@ -10,6 +10,7 @@ It includes a web dashboard for everyday use and an API for automation/integrati
 ## What you can do
 
 - Create short links from long URLs
+- Restore third-party short links to their final destination
 - Choose an optional custom short code
 - Set links to expire after a period of time, or keep them forever
 - Copy and share generated short links and QR codes
@@ -51,6 +52,11 @@ Open the Vite dev URL shown in the terminal. If the frontend and backend are on 
 4. Click **Shorten URL**.
 5. Copy the generated link or download/share the QR code.
 
+### Restore a third-party URL
+
+Open **URL Restore**, paste any public HTTP or HTTPS link, and inspect its
+redirect chain and final destination. Results are not persisted.
+
 ### Manage links
 
 Go to **Dashboard** to:
@@ -88,6 +94,7 @@ When using urlo without signing in, created links are saved in the browser. In *
 Most deployments only need to adjust [config.yaml](config.yaml):
 
 - `base_url` — public URL used when generating short links
+- `expander` — timeout and redirect limits for third-party URL expansion
 - `storage` — in-memory storage for local/dev, or S3-compatible storage for persistence
 - `auth` — optional Google sign-in
 - `clicks` — optional click-event logging
@@ -101,6 +108,7 @@ For integrations and automation, see the API documentation:
 
 - [API overview](docs/api/README.md)
 - [Auth](docs/api/auth.md)
+- [URL expansion](docs/api/expand.md)
 - [URLs](docs/api/urls.md)
 - [Clicks and analytics](docs/api/clicks.md)
 - [Redirect behavior](docs/api/redirect.md)
