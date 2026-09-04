@@ -42,6 +42,27 @@ function getBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ""
 }
 
+function parseJSONBody(text: string): unknown {
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function errorMessageFromBody(data: unknown, status: number, text: string): string {
+  if (data && typeof data === "object") {
+    const err = data as ApiError
+    if (err.message || err.error) return err.message || err.error
+  }
+  const trimmed = text.trim()
+  if (trimmed && trimmed.length <= 200 && !trimmed.startsWith("<")) {
+    return trimmed
+  }
+  return `HTTP ${status}`
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${getBaseUrl()}${path}`, {
     credentials: "include",
@@ -53,12 +74,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (res.status === 204) return undefined as T
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  const data = parseJSONBody(text)
   if (!res.ok) {
-    const err = data as ApiError | null
-    const e = new Error(err?.message || err?.error || `HTTP ${res.status}`) as Error & { status?: number }
+    const e = new Error(errorMessageFromBody(data, res.status, text)) as Error & {
+      status?: number
+    }
     e.status = res.status
     throw e
+  }
+  if (text && data === null) {
+    throw new Error("invalid JSON response from server")
   }
   return data as T
 }
@@ -113,8 +138,9 @@ export const api = {
     const prefix = baseUrl?.trim() ?? getBaseUrl()
     return fetch(`${prefix}/health`, { credentials: "include" }).then(async (res) => {
       const text = await res.text()
-      const data = text ? JSON.parse(text) : null
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = parseJSONBody(text)
+      if (!res.ok) throw new Error(errorMessageFromBody(data, res.status, text))
+      if (text && data === null) throw new Error("invalid JSON response from server")
       return data as { status?: string; message?: string }
     })
   },
