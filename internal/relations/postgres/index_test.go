@@ -8,8 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/kongken/urlo/internal/relations/ent"
 	"github.com/kongken/urlo/internal/relations/postgres"
 	"github.com/kongken/urlo/internal/url"
 )
@@ -50,20 +54,57 @@ func testPool(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	migration, err := os.ReadFile("../../../migrations/postgres/00001_owner_link_index.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	up, _, _ := strings.Cut(string(migration), "-- +goose Down")
-	if _, err := pool.Exec(t.Context(), up); err != nil {
-		t.Fatal(err)
+	for _, file := range []string{"00001_owner_link_index.sql", "00002_owner_link_index_ent_id.sql"} {
+		applyMigration(t, pool, file, false)
 	}
 	return pool
 }
 
+func applyMigration(t *testing.T, pool *pgxpool.Pool, file string, down bool) {
+	t.Helper()
+	migration, err := os.ReadFile("../../../migrations/postgres/" + file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upSQL, downSQL, found := strings.Cut(string(migration), "-- +goose Down")
+	if !found {
+		t.Fatal("migration has no Down section")
+	}
+	statement := upSQL
+	if down {
+		statement = downSQL
+	}
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tx.Rollback(ctx)
+	}()
+	if _, err := tx.Exec(t.Context(), statement); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testClient(t *testing.T, pool *pgxpool.Pool) *ent.Client {
+	t.Helper()
+	client := ent.NewClient(ent.Driver(entsql.OpenDB(dialect.Postgres, stdlib.OpenDBFromPool(pool))))
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close Ent client: %v", err)
+		}
+	})
+	return client
+}
+
 func TestRefreshStoresOnlyOwnerRefs(t *testing.T) {
-	pool := testPool(t)
-	index, err := postgres.New(pool, "production", time.Second)
+	client := testClient(t, testPool(t))
+	index, err := postgres.New(client, "production", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

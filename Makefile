@@ -2,7 +2,7 @@ APP_NAME := urlo
 BUILD_DIR := bin
 GOOSE ?= goose
 
-.PHONY: tidy proto proto-lint build run clean postgres-migrate postgres-status
+.PHONY: tidy proto proto-lint ent build run clean postgres-migrate postgres-status
 
 tidy:
 	go mod tidy
@@ -12,6 +12,10 @@ proto:
 
 proto-lint:
 	buf lint
+
+# Ent generator version is pinned in go.mod's tool directive.
+ent:
+	go generate ./internal/relations/ent
 
 build:
 	mkdir -p $(BUILD_DIR)

@@ -11,9 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/kongken/urlo/internal/config"
 	"github.com/kongken/urlo/internal/relations"
+	"github.com/kongken/urlo/internal/relations/ent"
 	"github.com/kongken/urlo/internal/relations/postgres"
 	"github.com/kongken/urlo/internal/url"
 )
@@ -67,9 +71,16 @@ func buildRelations(ctx context.Context, c config.RelationsConfig, storage confi
 	if err != nil {
 		return nil, nil, errors.New("unable to create PostgreSQL connection pool")
 	}
-	index, err := postgres.New(pool, c.LinkSpace, time.Duration(queryMS)*time.Millisecond)
-	if err != nil {
+	// Ent uses pgx's database/sql bridge over the existing bounded pool.
+	// The bridge owns no idle pool connections and must close before the pool.
+	client := ent.NewClient(ent.Driver(entsql.OpenDB(dialect.Postgres, stdlib.OpenDBFromPool(pool))))
+	closeDatabase := sync.OnceFunc(func() {
+		_ = client.Close()
 		pool.Close()
+	})
+	index, err := postgres.New(client, c.LinkSpace, time.Duration(queryMS)*time.Millisecond)
+	if err != nil {
+		closeDatabase()
 		return nil, nil, err
 	}
 	store, err := relations.New(relations.Options{
@@ -78,12 +89,12 @@ func buildRelations(ctx context.Context, c config.RelationsConfig, storage confi
 		OperationTimeout: time.Duration(max(queryMS, connectSeconds*1000)+5000) * time.Millisecond,
 	})
 	if err != nil {
-		pool.Close()
+		closeDatabase()
 		return nil, nil, err
 	}
 	closeResources := sync.OnceFunc(func() {
 		store.Close()
-		pool.Close()
+		closeDatabase()
 	})
 	probeCtx, cancel := context.WithTimeout(ctx, time.Duration(connectSeconds)*time.Second)
 	probeErr := pool.Ping(probeCtx)

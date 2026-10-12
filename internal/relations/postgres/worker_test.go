@@ -10,8 +10,8 @@ import (
 )
 
 func TestBackgroundWorkerMakesCreatedLinksVisible(t *testing.T) {
-	pool := testPool(t)
-	index, _ := postgres.New(pool, "test", time.Second)
+	client := testClient(t, testPool(t))
+	index, _ := postgres.New(client, "test", time.Second)
 	store, err := relations.New(relations.Options{Source: url.NewMemoryStore(), Index: index, LinkSpace: "test"})
 	if err != nil {
 		t.Fatal(err)

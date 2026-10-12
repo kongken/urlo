@@ -37,6 +37,12 @@ jobs:
       with:
         go-version: '1.26'
 
+    - name: Verify generated Ent code
+      run: |
+        make ent
+        git diff --exit-code -- internal/relations/ent
+        test -z "$(git ls-files --others --exclude-standard -- internal/relations/ent)"
+
     - name: Validate and apply PostgreSQL migrations
       env:
         URLO_POSTGRES_DSN: ${{ env.URLO_TEST_POSTGRES_DSN }}

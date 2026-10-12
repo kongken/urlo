@@ -5,9 +5,40 @@ use `storage.driver: s3`; memory remains available for development/tests.
 
 S3 JSON remains authoritative for code uniqueness, destination, owner, expiry,
 disabled status and the existing best-effort visit count. PostgreSQL stores
-only `(link_space, code, owner_id, link_created_at, indexed_at)` for owner queries.
+`(link_space, code, owner_id, link_created_at, indexed_at)` for owner queries,
+plus an internal Ent row `id`.
 No users, tags, folders, ACLs or complete link replicas are added in this phase.
 Redis click recording and rate limiting are unchanged.
+
+## Ent DAO and schema changes
+
+The PostgreSQL DAO uses **Ent v0.14.6**, not handwritten row SQL or GORM.
+The underlying driver remains pgx through its `database/sql` bridge over the
+bounded `pgxpool`; Ent owns the bridge, and startup/shutdown manages both clients.
+
+- Model: [`OwnerLinkIndex`](../internal/relations/ent/schema/owner_link_index.go).
+- Generated builders: `internal/relations/ent/`; generator pinned as a Go tool
+  in `go.mod`. Edit the schema, run `make ent`, and commit the generated changes.
+  CI verifies that regeneration produces no diff.
+- DAO: `internal/relations/postgres/index.go`. Reads, conditional upserts,
+  deletes and transactions use Ent builders. Only PostgreSQL's per-key advisory
+  lock uses Ent's raw execution escape hatch, within the same transaction.
+- Schema deployment remains **versioned Goose SQL**. The service never calls
+  Ent `Schema.Create`; probing and data backfill do not create or alter tables.
+
+Migration `00002_owner_link_index_ent_id.sql` upgrades existing V1 tables:
+it adds a bigint identity row ID, makes it the primary key, and retains
+`(link_space, code)` as a unique constraint. Existing refs, case-sensitive
+collations, owner paging indexes and the previous release's conflict target
+are preserved. Run this migration **before deploying the Ent DAO**.
+The Down migration preserves owner refs; after downgrading the schema, use the
+pre-Ent binary. Normally roll back the binary/read source without reverting DDL.
+The ALTER operations lock/reindex the table; schedule large-table upgrades in
+an appropriate maintenance window and validate duration on representative data.
+
+This database row ID is disposable and changes if an index row is deleted and
+recreated. It is **not** an immutable S3 `link_id`, and must not be used to bind
+tags, folders, permissions or other persistent business relations.
 
 ## Enable safely
 
@@ -105,8 +136,10 @@ scheduled pass retries; a failed queue item is not an immediate durable retry.
 
 A syntactically invalid/missing DSN or invalid configuration fails startup.
 A temporarily unavailable PostgreSQL server or missing migration logs a warning
-but allows the S3 service to start. PostgreSQL owner queries return `503`; S3-read
-mode continues using pointers. `/health` and redirects do not become dependent
+but allows the S3 service to start. PostgreSQL owner queries return `503` when
+the database or their required table/columns are unavailable; S3-read mode
+continues using pointers. A V1 table may still serve old owner refs, but Ent
+refreshes require migration 00002 and cannot repair new data until it is applied. `/health` and redirects do not become dependent
 on the relation database. SIGINT/SIGTERM cancel workers and close their pool;
 Core does not expose HTTP/gRPC draining, so full server graceful shutdown remains
 an existing framework limitation. Queue work is intentionally not drained on exit.
@@ -121,7 +154,10 @@ URLO_TEST_POSTGRES_DSN='postgres://test@localhost:5432/urlo_test?sslmode=disable
 ```
 
 PostgreSQL integration tests create and drop isolated, randomly named schemas,
-apply the actual migration's Up SQL, and test the public adapter/module interfaces.
+apply the actual migrations' Up SQL, and test the public adapter/module interfaces
+through a real Ent client. Additional tests cover upgrading existing V1 rows,
+rollback/reapply, no automatic schema creation, unchanged-ref upserts at database
+time precision, and transaction timeout/lock release.
 They skip when `URLO_TEST_POSTGRES_DSN` is unset. Do not point them at production.
 CI provisions PostgreSQL 17, validates/applies migrations using goose, and runs
 these tests with the race detector. Local verification used PostgreSQL 16.

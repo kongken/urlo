@@ -19,6 +19,10 @@ front/                # React frontend; has its own go.mod only as a module boun
 internal/http/        # Gin REST routes (delegates to url.Service)
 internal/url/         # Core URL service: Service, Store interface
 internal/url/s3store/ # S3-backed Store implementation
+internal/relations/   # Optional owner projection; primary links stay on S3
+internal/relations/ent/schema/ # Ent model definitions
+internal/relations/postgres/   # Ent-backed PostgreSQL owner-index adapter
+migrations/postgres/ # Independently deployed Goose SQL migrations
 proto/urlo/v1/        # .proto sources (buf-managed)
 pkg/proto/urlo/v1/    # generated protobuf/grpc/connect Go code
 docs/api/             # HTTP/gRPC API reference (split by topic)
@@ -42,6 +46,7 @@ changing an endpoint, update the matching file (and the index table in
 | Tests | `go test ./...` |
 | Tests w/ coverage | `go test -race -covermode=atomic -coverprofile=coverage.out ./...` |
 | Regenerate proto | `make proto` (requires `buf`) |
+| Regenerate Ent | `make ent` (generator pinned in go.mod) |
 | Lint proto | `make proto-lint` |
 | Tidy modules | `make tidy` |
 | Docker build | `docker build -t urlo .` |
@@ -51,6 +56,7 @@ changing an endpoint, update the matching file (and the index table in
 - **Storage drivers** are pluggable via `url.Store` interface. Adding a new backend: implement `Store` (see `internal/url/memory.go`, `internal/url/s3store/`), then wire it into `buildStore` in `cmd/urlo/main.go` with a new `driver` value.
 - **S3 client** comes from `butterfly.orx.me/core/store/s3` — configured under `store.s3.<name>` in `config.yaml`, referenced by `storage.s3.config_name`.
 - **Proto changes**: edit files under `proto/urlo/v1/`, then `make proto`. Do not hand-edit files under `pkg/proto/`.
+- **PostgreSQL DAO** uses Ent. Edit `internal/relations/ent/schema/`, regenerate with `make ent`, and commit the generated code; keep generated files unchanged by hand. Schema changes require a new Goose migration under `migrations/postgres/`, independently applied before deployment. Keep automatic schema migration out of Web startup. When changing the DAO, migrations, or rollout behavior, read `docs/storage.md` for lifecycle, compatibility and S3 authority rules.
 - **Frontend boundary**: `front/go.mod` is intentional. It keeps root-level Go commands such as `go test ./...` from traversing `front/node_modules`; do not remove it unless the frontend is moved outside the root Go module.
 - **Tests**: prefer table-driven tests. `s3store` tests use a mockable S3 interface — keep the interface minimal so mocks stay easy.
 - **Go version**: 1.26 (see `go.mod`). The Dockerfile and CI both pin to 1.26.

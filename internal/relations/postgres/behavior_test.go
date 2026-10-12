@@ -13,9 +13,9 @@ import (
 )
 
 func TestCaseSensitiveCodesScopeAndMicrosecondCursor(t *testing.T) {
-	pool := testPool(t)
-	index, _ := postgres.New(pool, "alpha", time.Second)
-	other, _ := postgres.New(pool, "beta", time.Second)
+	client := testClient(t, testPool(t))
+	index, _ := postgres.New(client, "alpha", time.Second)
+	other, _ := postgres.New(client, "beta", time.Second)
 	source := url.NewMemoryStore()
 	ts := time.Date(2026, 1, 1, 0, 0, 0, 123456789, time.UTC)
 	for _, code := range []string{"Abc", "abc"} {
@@ -44,8 +44,8 @@ func TestCaseSensitiveCodesScopeAndMicrosecondCursor(t *testing.T) {
 }
 
 func TestOwnerPageFiltersStaleRefsWithoutLosingLiveRecords(t *testing.T) {
-	pool := testPool(t)
-	index, _ := postgres.New(pool, "test", 3*time.Second)
+	client := testClient(t, testPool(t))
+	index, _ := postgres.New(client, "test", 3*time.Second)
 	source := url.NewMemoryStore()
 	now := time.Now().UTC()
 	for _, r := range []*url.Record{
@@ -90,8 +90,8 @@ func (failedGetter) Get(context.Context, string) (*url.Record, error) {
 }
 
 func TestRefreshDoesNotDeleteOnSourceErrorsAndRepairsCodeReuse(t *testing.T) {
-	pool := testPool(t)
-	index, _ := postgres.New(pool, "test", time.Second)
+	client := testClient(t, testPool(t))
+	index, _ := postgres.New(client, "test", time.Second)
 	source := url.NewMemoryStore()
 	if err := source.Create(t.Context(), &url.Record{Code: "abc", OwnerID: "alice", CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
@@ -133,8 +133,8 @@ func TestRefreshDoesNotDeleteOnSourceErrorsAndRepairsCodeReuse(t *testing.T) {
 }
 
 func TestReconcileRepairsLostQueueWorkAndOrphans(t *testing.T) {
-	pool := testPool(t)
-	index, _ := postgres.New(pool, "test", time.Second)
+	client := testClient(t, testPool(t))
+	index, _ := postgres.New(client, "test", time.Second)
 	source := url.NewMemoryStore()
 	store, err := relations.New(relations.Options{Source: source, Index: index, LinkSpace: "test", BufferSize: 1})
 	if err != nil {
@@ -180,8 +180,8 @@ func (g pausedGetter) Get(ctx context.Context, code string) (*url.Record, error)
 
 func TestConcurrentRefreshCannotOverwriteNewerOwnerWithDelayedRead(t *testing.T) {
 	pool := testPool(t)
-	first, _ := postgres.New(pool, "test", 5*time.Second)
-	second, _ := postgres.New(pool, "test", 5*time.Second)
+	first, _ := postgres.New(testClient(t, pool), "test", 5*time.Second)
+	second, _ := postgres.New(testClient(t, pool), "test", 5*time.Second)
 	source := url.NewMemoryStore()
 	if err := source.Create(t.Context(), &url.Record{Code: "abc", OwnerID: "alice", CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
