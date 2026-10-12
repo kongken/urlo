@@ -2,6 +2,8 @@ package url
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 )
 
@@ -82,6 +84,30 @@ func (m *MemoryStore) ListByOwner(_ context.Context, ownerID string) ([]*Record,
 		}
 	}
 	return out, nil
+}
+
+// ScanCodes implements ScanStore for local tests and reconciliation.
+func (m *MemoryStore) ScanCodes(ctx context.Context, token string, limit int) ([]string, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
+	if limit < 1 || limit > 1000 {
+		return nil, "", ErrInvalidPage
+	}
+	m.mu.RLock()
+	keys := slices.Sorted(maps.Keys(m.records))
+	m.mu.RUnlock()
+	out := make([]string, 0, limit)
+	for _, code := range keys {
+		if code <= token {
+			continue
+		}
+		if len(out) == limit {
+			return out, out[len(out)-1], nil
+		}
+		out = append(out, code)
+	}
+	return out, "", nil
 }
 
 func (m *MemoryStore) Exists(_ context.Context, code string) (bool, error) {

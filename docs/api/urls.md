@@ -7,7 +7,27 @@ See [auth.md](./auth.md) for ownership/auth rules and [conventions.md](./convent
 ### `GET /api/v1/urls` — List my links
 
 Lists short links owned by the authenticated caller. Expired links are
-omitted.
+omitted; disabled, non-expired links remain manageable. Ownership is checked
+against the current primary record, not just the owner index.
+
+Without pagination parameters, the legacy endpoint returns all links.
+Supplying `page_size` or `page_token` opts into pagination:
+
+| Query parameter | Notes |
+| --- | --- |
+| `page_size` | `1–500`; omitted or `0` uses `50`. Negative, oversized or non-integer values return `400`. |
+| `page_token` | Opaque `next_page_token` from the previous response. Bound to the owner and read source; invalid tokens return `400`. |
+
+Paged responses contain `{ "links": [...], "next_page_token": "..." }`.
+Continue until the token is empty, **even if a page has no links**: a scan
+budget can produce an empty page while skipping stale/expired candidates.
+Restart pagination after switching owner-index read sources. Ordering is newest
+creation first, with a case-sensitive code tie-breaker; it is not a snapshot.
+
+When PostgreSQL owner indexing is enabled, new links may briefly be absent
+from this list until background synchronization completes. Primary creation,
+resolution and ownership enforcement still use S3; unavailable PostgreSQL
+owner queries return `503`. See [storage](../storage.md).
 
 ```bash
 curl --cookie 'urlo_session=…' http://localhost:8080/api/v1/urls
@@ -18,7 +38,12 @@ curl --cookie 'urlo_session=…' http://localhost:8080/api/v1/urls
 { "links": [ { "code": "aB3xQ7", "long_url": "…", … } ] }
 ```
 
-**Errors**: `401` (login required).
+```bash
+curl --cookie 'urlo_session=…' 'http://localhost:8080/api/v1/urls?page_size=100'
+```
+
+**Errors**: `400` (invalid pagination), `401` (login required),
+`503` (PostgreSQL owner index unavailable).
 
 ---
 

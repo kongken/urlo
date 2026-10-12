@@ -30,6 +30,29 @@ storage:
     prefix: "urlo/links"
 
 # ----------------------------------------------------------------------
+# Optional owner -> code projection. Short links ALWAYS remain on S3.
+# Requires storage.driver=s3 and an externally applied PostgreSQL migration.
+# See docs/storage.md. Core's store.db is MySQL-only; do not configure PG there.
+#   driver: none (default) | postgres
+#   read_source: s3 keeps existing queries during backfill; postgres switches reads.
+# Database downtime never blocks link creation or redirects. PG owner lists
+# return 503 when read_source=postgres. Sync is eventually consistent.
+# ----------------------------------------------------------------------
+relations:
+  driver: "none"
+  # Stable ID for this bucket/prefix code namespace; replicas must agree.
+  link_space: "urlo-local"
+  owner_index_read_source: "s3"
+  buffer_size: 1024
+  reconcile_interval_seconds: 300
+  postgres:
+    # Inject the DSN through a deployment secret, not this file.
+    dsn_env: "URLO_POSTGRES_DSN"
+    max_conns: 10
+    connect_timeout_seconds: 3
+    query_timeout_ms: 1000
+
+# ----------------------------------------------------------------------
 # Butterfly store configuration (referenced by storage.s3.config_name).
 # Only required when storage.driver = "s3".
 # ----------------------------------------------------------------------

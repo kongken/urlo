@@ -96,11 +96,15 @@ Most deployments only need to adjust [config.yaml](config.yaml):
 - `base_url` — public URL used when generating short links
 - `expander` — timeout and redirect limits for third-party URL expansion
 - `storage` — in-memory storage for local/dev, or S3-compatible storage for persistence
+- `relations` — optional PostgreSQL owner index; short-link records stay on S3
 - `auth` — optional Google sign-in
 - `clicks` — optional click-event logging
 - `rate_limit` — optional public API rate limiting
 
 See comments and examples in [config.yaml](config.yaml) for the available settings.
+For PostgreSQL migrations, backfill, read switching and rollback, see
+[storage operations](docs/storage.md). PostgreSQL is optional and does not sit
+on the shortening or redirect path.
 
 ## API
 

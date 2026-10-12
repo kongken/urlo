@@ -325,12 +325,16 @@ const groups: Group[] = [
         path: "/api/v1/urls",
         title: "List my links",
         auth: "required",
-        description: "Lists short links owned by the authenticated caller. Expired links are omitted.",
-        curl: `curl --cookie 'urlo_session=…' ${"BASE"}/api/v1/urls`,
+        description: "Lists the caller's non-expired links, including disabled links. No query parameters preserves the full legacy list. Pagination orders newest first and returns an opaque cursor; continue until the cursor is empty, even after an empty page. PostgreSQL owner indexes are eventually consistent; primary records and ownership checks remain on S3.",
+        params: [
+          { name: "page_size", type: "integer", required: false, notes: "1–500; 0 or omitted uses 50 when pagination is requested" },
+          { name: "page_token", type: "string", required: false, notes: "Opaque next_page_token; bound to the owner and read source" },
+        ],
+        curl: `curl --cookie 'urlo_session=…' '${"BASE"}/api/v1/urls?page_size=100'`,
         response: {
-          body: `{ "links": [ { "code": "aB3xQ7", "long_url": "…", … } ] }`,
+          body: `{ "links": [ { "code": "aB3xQ7", "long_url": "…", … } ], "next_page_token": "…" }`,
         },
-        errors: "401 (login required)",
+        errors: "400 (invalid pagination), 401 (login required), 503 (PostgreSQL owner index unavailable)",
       },
       {
         method: "GET",

@@ -192,7 +192,7 @@ func (s *Service) ShortenWithOwner(ctx context.Context, req *urlov1.ShortenReque
 	}
 
 	if code := req.GetCustomCode(); code != "" {
-		if !isValidCode(code) {
+		if !IsValidCode(code) {
 			return nil, status.Error(codes.InvalidArgument, "custom_code must be 1-32 chars from [A-Za-z0-9]")
 		}
 		r := &Record{Code: code, LongURL: req.GetLongUrl(), OwnerID: ownerID, CreatedAt: now, ExpiresAt: expiresAt}
@@ -230,11 +230,11 @@ func (s *Service) ListByOwner(ctx context.Context, ownerID string) ([]*urlov1.Sh
 	}
 	records, err := s.store.ListByOwner(ctx, ownerID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "list: %v", err)
+		return nil, mapOwnerQueryErr(err)
 	}
 	out := make([]*urlov1.ShortLink, 0, len(records))
 	for _, r := range records {
-		if r.Expired() {
+		if r.OwnerID != ownerID || r.Expired() {
 			continue
 		}
 		out = append(out, s.toProto(r))
@@ -266,7 +266,7 @@ func (s *Service) Availability(ctx context.Context, code string) (bool, error) {
 	if code == "" {
 		return false, status.Error(codes.InvalidArgument, "code is required")
 	}
-	if !isValidCode(code) {
+	if !IsValidCode(code) {
 		return false, status.Error(codes.InvalidArgument, "code must be 1-32 chars from [A-Za-z0-9]")
 	}
 	ok, err := s.store.Exists(ctx, code)
@@ -609,7 +609,8 @@ func randomCode(length int) (string, error) {
 	return string(out), nil
 }
 
-func isValidCode(s string) bool {
+// IsValidCode reports whether s is a legal short-code object key.
+func IsValidCode(s string) bool {
 	if len(s) == 0 || len(s) > maxCodeLen {
 		return false
 	}

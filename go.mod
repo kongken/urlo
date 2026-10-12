@@ -10,6 +10,7 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-redis/redis_rate/v10 v10.0.1
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/redis/go-redis/v9 v9.6.1
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.10
@@ -63,6 +64,9 @@ require (
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect

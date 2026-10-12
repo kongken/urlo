@@ -11,9 +11,28 @@ type ServiceConfig struct {
 	// above 32 are clamped to 32. 0 (default) keeps the built-in default.
 	CodeLength int             `yaml:"code_length"`
 	Storage    StorageConfig   `yaml:"storage"`
+	Relations  RelationsConfig `yaml:"relations"`
 	RateLimit  RateLimitConfig `yaml:"rate_limit"`
 	Auth       AuthConfig      `yaml:"auth"`
 	Clicks     ClicksConfig    `yaml:"clicks"`
+}
+
+// RelationsConfig optionally maintains a rebuildable PostgreSQL owner index.
+// It never selects the primary link backend. An empty/none driver is disabled.
+type RelationsConfig struct {
+	Driver               string                  `yaml:"driver"`
+	LinkSpace            string                  `yaml:"link_space"`
+	OwnerIndexReadSource string                  `yaml:"owner_index_read_source"`
+	BufferSize           int                     `yaml:"buffer_size"`
+	ReconcileSeconds     int                     `yaml:"reconcile_interval_seconds"`
+	Postgres             PostgresRelationsConfig `yaml:"postgres"`
+}
+
+type PostgresRelationsConfig struct {
+	DSNEnv                string `yaml:"dsn_env"`
+	MaxConns              int    `yaml:"max_conns"`
+	ConnectTimeoutSeconds int    `yaml:"connect_timeout_seconds"`
+	QueryTimeoutMS        int    `yaml:"query_timeout_ms"`
 }
 
 // ExpanderConfig configures requests made while expanding third-party URLs.
@@ -99,5 +118,7 @@ func (c *ServiceConfig) Print() {
 		"expand_timeout_seconds", c.Expander.TimeoutSeconds,
 		"expand_max_redirects", c.Expander.MaxRedirects,
 		"storage_driver", c.Storage.Driver,
+		"relations_driver", c.Relations.Driver,
+		"owner_index_read_source", c.Relations.OwnerIndexReadSource,
 	)
 }
