@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
-	migrations "github.com/kongken/urlo/migrations/postgres"
+	"github.com/kongken/urlo/migrations"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
@@ -34,7 +34,11 @@ func migrate(ctx context.Context, dsn string) (migrationResult, error) {
 	// Each provider leases one connection for both locking and migration DDL.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(0)
-	result, err := apply(ctx, db, migrations.Files)
+	files, err := migrations.Postgres()
+	if err != nil {
+		return migrationResult{}, err
+	}
+	result, err := apply(ctx, db, files)
 	if err != nil {
 		return result, &redactedError{cause: err, dsn: dsn, password: cfg.Password}
 	}

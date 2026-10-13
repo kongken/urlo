@@ -14,7 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
-	migrations "github.com/kongken/urlo/migrations/postgres"
+	"github.com/kongken/urlo/migrations"
 	"github.com/pressly/goose/v3/lock"
 )
 
@@ -172,7 +172,11 @@ func TestCancelledContextDoesNotApplyDDL(t *testing.T) {
 	_, db := isolatedDatabase(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := apply(ctx, db, migrations.Files); err == nil {
+	files, err := migrations.Postgres()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := apply(ctx, db, files); err == nil {
 		t.Fatal("ignored cancelled context")
 	}
 }
