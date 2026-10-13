@@ -1,0 +1,88 @@
+name: Deploy (migration gate)
+
+# Explicit release entrypoint. Image publication/PR CI never deploys a cluster.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected GitHub Environment holding KUBE_CONFIG
+        required: true
+        type: string
+      image:
+        description: Published backend image@sha256 digest (not a mutable tag)
+        required: true
+        type: string
+      context:
+        description: Explicit kubeconfig context
+        required: true
+        type: string
+      namespace:
+        description: Kubernetes namespace
+        required: true
+        type: string
+      deployment:
+        description: Existing backend Deployment name
+        required: true
+        type: string
+      container:
+        description: Backend container in the Deployment
+        required: true
+        type: string
+      migration_secret:
+        description: Existing namespace Secret containing migration-role DSN under key dsn
+        required: true
+        type: string
+      kubectl_version:
+        description: Kubectl version compatible with the target cluster (within one minor)
+        required: false
+        default: v1.35.0
+        type: string
+      pg_ca_secret:
+        description: Optional namespace Secret containing PostgreSQL ca.crt
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: urlo-release-${{ inputs.context }}-${{ inputs.namespace }}-${{ inputs.deployment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ inputs.kubectl_version }}
+      - name: Configure cluster credentials
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          test -n "$KUBE_CONFIG" || { echo "KUBE_CONFIG is required in the selected Environment" >&2; exit 1; }
+          umask 077
+          printf '%s' "$KUBE_CONFIG" > "$RUNNER_TEMP/urlo-kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/urlo-kubeconfig" >> "$GITHUB_ENV"
+      - name: Migrate before rolling out the exact image
+        env:
+          RELEASE_CONTEXT: ${{ inputs.context }}
+          RELEASE_NAMESPACE: ${{ inputs.namespace }}
+          RELEASE_DEPLOYMENT: ${{ inputs.deployment }}
+          RELEASE_CONTAINER: ${{ inputs.container }}
+          RELEASE_IMAGE: ${{ inputs.image }}
+          MIGRATION_SECRET: ${{ inputs.migration_secret }}
+          PG_CA_SECRET: ${{ inputs.pg_ca_secret }}
+        run: |
+          args=()
+          if [ -n "$PG_CA_SECRET" ]; then args+=(--pg-ca-secret "$PG_CA_SECRET"); fi
+          python3 scripts/deploy-kubernetes.py \
+            --context "$RELEASE_CONTEXT" --namespace "$RELEASE_NAMESPACE" \
+            --deployment "$RELEASE_DEPLOYMENT" --container "$RELEASE_CONTAINER" \
+            --image "$RELEASE_IMAGE" --migration-secret "$MIGRATION_SECRET" "${args[@]}"
+      - name: Remove cluster credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/urlo-kubeconfig"

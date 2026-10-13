@@ -103,8 +103,9 @@ Most deployments only need to adjust [config.yaml](config.yaml):
 
 See comments and examples in [config.yaml](config.yaml) for the available settings.
 For PostgreSQL migrations, backfill, read switching and rollback, see
-[storage operations](docs/storage.md). PostgreSQL is optional and does not sit
-on the shortening or redirect path.
+[storage operations](docs/storage.md). For automated migration-before-rollout
+Jobs and the release workflow, see [deployment](docs/deployment.md).
+PostgreSQL is optional and does not sit on the shortening or redirect path.
 
 ## API
 

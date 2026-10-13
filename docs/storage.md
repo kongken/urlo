@@ -47,7 +47,10 @@ tags, folders, permissions or other persistent business relations.
    SELECT/INSERT/UPDATE/DELETE on `owner_link_index`.
 2. Inject a PostgreSQL DSN as `URLO_POSTGRES_DSN` using deployment secrets.
    Configure TLS as required by your platform. Never commit or print credentials.
-3. Install the pinned migration CLI (independent of the application's Go module):
+3. For automatic release-time migration, use the bundled command/Job described
+   in [deployment](deployment.md); no external Goose installation is needed.
+   For optional administrative `postgres-status`/Down operations, install the
+   pinned Goose CLI (independent of the application's Go module):
 
    ```bash
    go install -tags='no_mysql no_sqlite3 no_ydb no_mssql no_libsql no_azuresql no_clickhouse no_vertica' github.com/pressly/goose/v3/cmd/goose@v3.29.0
@@ -60,8 +63,12 @@ tags, folders, permissions or other persistent business relations.
    make postgres-status
    ```
 
-   These targets read `URLO_POSTGRES_DSN`; `GOOSE=/path/to/goose` can override
-   the executable. The application only probes the table; it does not migrate it.
+   `postgres-migrate` runs the bundled, advisory-locked deployment command from
+   its separate Go module. `postgres-status` uses the optional Goose CLI
+   (`GOOSE=/path/to/goose` overrides that executable). Both read `URLO_POSTGRES_DSN`.
+   The Web application only probes the table; it does not migrate it.
+   The release workflow can execute migration automatically and gate rollout;
+   see [deployment](deployment.md).
 5. Configure S3 as usual, then enable dual-write/backfill with S3 reads:
 
    ```yaml
@@ -139,7 +146,8 @@ A temporarily unavailable PostgreSQL server or missing migration logs a warning
 but allows the S3 service to start. PostgreSQL owner queries return `503` when
 the database or their required table/columns are unavailable; S3-read mode
 continues using pointers. A V1 table may still serve old owner refs, but Ent
-refreshes require migration 00002 and cannot repair new data until it is applied. `/health` and redirects do not become dependent
+refreshes require migration 00002 and cannot repair new data until it is applied.
+`/health` and redirects do not become dependent
 on the relation database. SIGINT/SIGTERM cancel workers and close their pool;
 Core does not expose HTTP/gRPC draining, so full server graceful shutdown remains
 an existing framework limitation. Queue work is intentionally not drained on exit.
@@ -161,6 +169,8 @@ time precision, and transaction timeout/lock release.
 They skip when `URLO_TEST_POSTGRES_DSN` is unset. Do not point them at production.
 CI provisions PostgreSQL 17, validates/applies migrations using goose, and runs
 these tests with the race detector. Local verification used PostgreSQL 16.
+Run `make test-migrate test-deploy` for the separate migration-command module
+and migration-before-rollout gate tests; root Go commands skip that module.
 
 ## Deferred work
 
