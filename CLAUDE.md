@@ -15,10 +15,16 @@ Built on the `butterfly.orx.me/core` app framework (provides config loading, HTT
 
 ```
 cmd/urlo/             # main entrypoint; wires app.Config + builds storage
+cmd/urlo-migrate/     # Separate Go module: bundled, locked deployment migrations
+scripts/              # Migration-before-rollout Kubernetes release gate
 front/                # React frontend; has its own go.mod only as a module boundary for Go tooling
 internal/http/        # Gin REST routes (delegates to url.Service)
 internal/url/         # Core URL service: Service, Store interface
 internal/url/s3store/ # S3-backed Store implementation
+internal/relations/   # Optional owner projection; primary links stay on S3
+internal/relations/ent/schema/ # Ent model definitions
+internal/relations/postgres/   # Ent-backed PostgreSQL owner-index adapter
+migrations/postgres/ # Independently deployed Goose SQL migrations
 proto/urlo/v1/        # .proto sources (buf-managed)
 pkg/proto/urlo/v1/    # generated protobuf/grpc/connect Go code
 docs/api/             # HTTP/gRPC API reference (split by topic)
@@ -42,6 +48,9 @@ changing an endpoint, update the matching file (and the index table in
 | Tests | `go test ./...` |
 | Tests w/ coverage | `go test -race -covermode=atomic -coverprofile=coverage.out ./...` |
 | Regenerate proto | `make proto` (requires `buf`) |
+| Regenerate Ent | `make ent` (generator pinned in go.mod) |
+| Migration tool tests | `make test-migrate` (separate Go module) |
+| Release gate tests | `make test-deploy` (mock kubectl; no cluster changes) |
 | Lint proto | `make proto-lint` |
 | Tidy modules | `make tidy` |
 | Docker build | `docker build -t urlo .` |
@@ -51,6 +60,8 @@ changing an endpoint, update the matching file (and the index table in
 - **Storage drivers** are pluggable via `url.Store` interface. Adding a new backend: implement `Store` (see `internal/url/memory.go`, `internal/url/s3store/`), then wire it into `buildStore` in `cmd/urlo/main.go` with a new `driver` value.
 - **S3 client** comes from `butterfly.orx.me/core/store/s3` — configured under `store.s3.<name>` in `config.yaml`, referenced by `storage.s3.config_name`.
 - **Proto changes**: edit files under `proto/urlo/v1/`, then `make proto`. Do not hand-edit files under `pkg/proto/`.
+- **PostgreSQL DAO** uses Ent. Edit `internal/relations/ent/schema/`, regenerate with `make ent`, and commit the generated code; keep generated files unchanged by hand. Schema changes require a new Goose migration under `migrations/postgres/`, independently applied before deployment. Keep automatic schema migration out of Web startup. When changing the DAO, migrations, or rollout behavior, read `docs/storage.md` for lifecycle, compatibility and S3 authority rules.
+- **Release migrations**: Keep `cmd/urlo-migrate/go.mod` as a module boundary to isolate Goose dependencies from the Web service. Root Go commands skip it; build/test it explicitly. SQL files under `migrations/postgres/` are embedded into this tool. When changing migration automation or deployment gating, read `docs/deployment.md` for locking, credential boundaries, immutable images and failure behavior.
 - **Frontend boundary**: `front/go.mod` is intentional. It keeps root-level Go commands such as `go test ./...` from traversing `front/node_modules`; do not remove it unless the frontend is moved outside the root Go module.
 - **Tests**: prefer table-driven tests. `s3store` tests use a mockable S3 interface — keep the interface minimal so mocks stay easy.
 - **Go version**: 1.26 (see `go.mod`). The Dockerfile and CI both pin to 1.26.

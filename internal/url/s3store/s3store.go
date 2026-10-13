@@ -255,7 +255,10 @@ func (s *Store) ListByOwner(ctx context.Context, ownerID string) ([]*url.Record,
 				}
 				return nil, err
 			}
-			out = append(out, r)
+			// A stale pointer may refer to a code reused by another owner.
+			if r.OwnerID == ownerID {
+				out = append(out, r)
+			}
 		}
 		if page.IsTruncated == nil || !*page.IsTruncated {
 			break
@@ -263,6 +266,43 @@ func (s *Store) ListByOwner(ctx context.Context, ownerID string) ([]*url.Record,
 		token = page.NextContinuationToken
 	}
 	return out, nil
+}
+
+// ScanCodes lists only flat primary JSON object keys. Owner pointers are
+// excluded by Delimiter, even when the same bucket contains other prefixes.
+func (s *Store) ScanCodes(ctx context.Context, token string, limit int) ([]string, string, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, "", url.ErrInvalidPage
+	}
+	prefix := s.prefix + "/"
+	in := &awss3.ListObjectsV2Input{
+		Bucket: new(s.bucket), Prefix: new(prefix), Delimiter: new("/"), MaxKeys: new(int32(limit)),
+	}
+	if token != "" {
+		in.ContinuationToken = new(token)
+	}
+	page, err := s.client.ListObjectsV2(ctx, in)
+	if err != nil {
+		return nil, "", err
+	}
+	codes := make([]string, 0, len(page.Contents))
+	for _, obj := range page.Contents {
+		key, ok := strings.CutPrefix(aws.ToString(obj.Key), prefix)
+		if !ok {
+			continue
+		}
+		code, ok := strings.CutSuffix(key, ".json")
+		if ok && url.IsValidCode(code) {
+			codes = append(codes, code)
+		}
+	}
+	if aws.ToBool(page.IsTruncated) {
+		if aws.ToString(page.NextContinuationToken) == "" {
+			return nil, "", errors.New("s3store: truncated scan without continuation token")
+		}
+		return codes, *page.NextContinuationToken, nil
+	}
+	return codes, "", nil
 }
 
 func (s *Store) Exists(ctx context.Context, code string) (bool, error) {

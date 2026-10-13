@@ -173,8 +173,22 @@ export const api = {
       method: "DELETE",
     })
   },
-  listMine() {
-    return request<{ links: ShortLink[] }>("/api/v1/urls").then((r) => r.links ?? [])
+  async listMine() {
+    const links = new Map<string, ShortLink>()
+    const seenTokens = new Set<string>()
+    let token = ""
+    do {
+      const params = new URLSearchParams({ page_size: "100" })
+      if (token) params.set("page_token", token)
+      const page = await request<{ links: ShortLink[]; next_page_token?: string }>(
+        `/api/v1/urls?${params.toString()}`,
+      )
+      for (const link of page.links ?? []) links.set(link.code, link)
+      token = page.next_page_token ?? ""
+      if (token && seenTokens.has(token)) throw new Error("Link pagination did not advance")
+      if (token) seenTokens.add(token)
+    } while (token)
+    return [...links.values()]
   },
   listClicks(code: string, opts?: { pageSize?: number; pageToken?: string }) {
     const params = new URLSearchParams()

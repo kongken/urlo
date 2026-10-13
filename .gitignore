@@ -1,3 +1,4 @@
 bin/
 /urlo
 .cache/
+__pycache__/

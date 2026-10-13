@@ -4,3 +4,4 @@ bin/
 *.md
 Dockerfile
 .dockerignore
+__pycache__/

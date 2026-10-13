@@ -17,6 +17,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux \
     go build -ldflags="-s -w" -o /out/urlo ./cmd/urlo
 
+# Separate module keeps deployment-tool dependencies out of the Web service.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd cmd/urlo-migrate && CGO_ENABLED=0 GOOS=linux \
+    go build -ldflags="-s -w" -o /out/urlo-migrate .
+
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata \
@@ -25,6 +31,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 WORKDIR /app
 
 COPY --from=builder /out/urlo /app/urlo
+COPY --from=builder /out/urlo-migrate /app/urlo-migrate
 
 USER app
 

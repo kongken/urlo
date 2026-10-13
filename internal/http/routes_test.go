@@ -9,9 +9,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kongken/urlo/internal/auth"
 	"github.com/kongken/urlo/internal/expander"
 	"github.com/kongken/urlo/internal/url"
 )
@@ -53,6 +55,57 @@ type linkResp struct {
 	LongURL    string `json:"long_url"`
 	ShortURL   string `json:"short_url"`
 	VisitCount int64  `json:"visit_count"`
+}
+
+func TestAuthenticatedOwnerListPagination(t *testing.T) {
+	sessions, err := auth.NewHMACSessions("owner-pagination-test-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := sessions.Issue(&auth.User{Sub: "alice"}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := url.NewMemoryStore()
+	for _, code := range []string{"a", "b"} {
+		if err := store.Create(t.Context(), &url.Record{Code: code, OwnerID: "alice", CreatedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := gin.New()
+	RegisterRoutes(r, url.NewService(url.Options{Store: store}), WithAuth(nil, sessions, "session", false, time.Hour))
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: "session", Value: token})
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+		return rr
+	}
+	type ownerPage struct {
+		Links []linkResp `json:"links"`
+		Next  string     `json:"next_page_token"`
+	}
+	first := get("/api/v1/urls?page_size=1")
+	if first.Code != http.StatusOK {
+		t.Fatalf("first: %d %s", first.Code, first.Body)
+	}
+	page := decode[ownerPage](t, first)
+	if len(page.Links) != 1 || page.Next == "" {
+		t.Fatalf("page = %+v", page)
+	}
+	second := decode[ownerPage](t, get("/api/v1/urls?page_size=1&page_token="+page.Next))
+	if len(second.Links) != 1 || second.Next != "" || second.Links[0].Code == page.Links[0].Code {
+		t.Fatalf("second = %+v", second)
+	}
+	legacy := decode[ownerPage](t, get("/api/v1/urls"))
+	if len(legacy.Links) != 2 {
+		t.Fatalf("legacy list truncated: %+v", legacy)
+	}
+	for _, query := range []string{"page_size=", "page_size=abc", "page_size=-1", "page_size=501", "page_token=invalid"} {
+		if rr := get("/api/v1/urls?" + query); rr.Code != http.StatusBadRequest {
+			t.Errorf("%s: status=%d", query, rr.Code)
+		}
+	}
 }
 
 func TestHealth(t *testing.T) {

@@ -434,6 +434,31 @@ func writeExpandError(c *gin.Context, err error) {
 func handleListMine(svc *url.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		u := auth.FromGin(c)
+		_, hasSize := c.Request.URL.Query()["page_size"]
+		_, hasToken := c.Request.URL.Query()["page_token"]
+		// Preserve the legacy full-list contract when pagination is not requested.
+		if hasSize || hasToken {
+			size := 0
+			if hasSize {
+				var err error
+				size, err = strconv.Atoi(c.Query("page_size"))
+				if err != nil {
+					writeStatusError(c, status.Error(codes.InvalidArgument, "invalid page_size"))
+					return
+				}
+			}
+			page, err := svc.ListByOwnerPage(c.Request.Context(), u.Sub, url.PageOptions{PageSize: size, PageToken: c.Query("page_token")})
+			if err != nil {
+				writeStatusError(c, err)
+				return
+			}
+			out := make([]shortLinkDTO, 0, len(page.Links))
+			for _, l := range page.Links {
+				out = append(out, toShortLinkDTO(l))
+			}
+			c.JSON(http.StatusOK, gin.H{"links": out, "next_page_token": page.NextPageToken})
+			return
+		}
 		links, err := svc.ListByOwner(c.Request.Context(), u.Sub)
 		if err != nil {
 			writeStatusError(c, err)

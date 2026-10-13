@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -78,14 +79,33 @@ func (f *fakeS3) ListObjectsV2(_ context.Context, in *awss3.ListObjectsV2Input, 
 	bucket := aws.ToString(in.Bucket)
 	prefix := aws.ToString(in.Prefix)
 	full := bucket + "/" + prefix
-	var contents []types.Object
+	var keys []string
 	for k := range f.objects {
 		if strings.HasPrefix(k, full) {
 			key := strings.TrimPrefix(k, bucket+"/")
-			contents = append(contents, types.Object{Key: aws.String(key)})
+			if delimiter := aws.ToString(in.Delimiter); delimiter != "" && strings.Contains(strings.TrimPrefix(key, prefix), delimiter) {
+				continue
+			}
+			if key > aws.ToString(in.ContinuationToken) {
+				keys = append(keys, key)
+			}
 		}
 	}
-	return &awss3.ListObjectsV2Output{Contents: contents}, nil
+	slices.Sort(keys)
+	limit := int(aws.ToInt32(in.MaxKeys))
+	if limit <= 0 {
+		limit = 1000
+	}
+	truncated := len(keys) > limit
+	keys = keys[:min(len(keys), limit)]
+	page := &awss3.ListObjectsV2Output{IsTruncated: new(truncated)}
+	for _, key := range keys {
+		page.Contents = append(page.Contents, types.Object{Key: new(key)})
+	}
+	if truncated {
+		page.NextContinuationToken = new(keys[len(keys)-1])
+	}
+	return page, nil
 }
 
 func (f *fakeS3) keys() []string {
@@ -106,6 +126,45 @@ func newStore(t *testing.T, prefix string) (*Store, *fakeS3) {
 		t.Fatalf("New: %v", err)
 	}
 	return s, fake
+}
+
+func TestPrimaryScanPaginatesWithoutOwnerPointers(t *testing.T) {
+	s, _ := newStore(t, "p")
+	for _, code := range []string{"a", "b", "c"} {
+		if err := s.Create(t.Context(), &url.Record{Code: code, OwnerID: "alice"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token := ""
+	var got []string
+	for {
+		codes, next, err := s.ScanCodes(t.Context(), token, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, codes...)
+		if next == "" {
+			break
+		}
+		token = next
+	}
+	if !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("primary scan = %v", got)
+	}
+}
+
+func TestOwnerPointerCannotExposeReusedCode(t *testing.T) {
+	s, _ := newStore(t, "p")
+	if err := s.Create(t.Context(), &url.Record{Code: "abc", OwnerID: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(t.Context(), &url.Record{Code: "abc", OwnerID: "bob"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListByOwner(t.Context(), "alice")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("stale owner pointer = %v %v", got, err)
+	}
 }
 
 func TestPrefixDefault(t *testing.T) {

@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"butterfly.orx.me/core/app"
@@ -24,6 +29,10 @@ import (
 )
 
 func main() {
+	shutdownCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	closeResources := func() {}
+	defer func() { closeResources() }()
 	svcConfig := &config.ServiceConfig{}
 	urlSvc := url.NewService(url.Options{})
 	urlExpander := expander.New(expander.Options{})
@@ -71,6 +80,11 @@ func main() {
 				if err != nil {
 					return fmt.Errorf("build store: %w", err)
 				}
+				store, closeRelations, err := buildRelations(shutdownCtx, svcConfig.Relations, svcConfig.Storage, store)
+				if err != nil {
+					return fmt.Errorf("build relations: %w", err)
+				}
+				closeResources = closeRelations
 				urlSvc.SetStore(store)
 				slog.Info("url service ready", "store", svcConfig.Storage.Driver)
 
@@ -105,6 +119,22 @@ func main() {
 						"driver", svcConfig.Clicks.Driver,
 						"max_len", svcConfig.Clicks.MaxLen)
 				}
+				closeResources = sync.OnceFunc(func() {
+					closeRelations()
+					if closer, ok := rec.(interface{ Close(context.Context) error }); ok {
+						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer cancel()
+						_ = closer.Close(ctx)
+					}
+				})
+				// Core does not invoke TeardownFunc or expose server shutdown.
+				// Explicitly cancel workers/close pools on signals; HTTP draining
+				// remains a framework limitation, not a PostgreSQL prerequisite.
+				go func() {
+					<-shutdownCtx.Done()
+					closeResources()
+					os.Exit(0)
+				}()
 				return nil
 			},
 		},
